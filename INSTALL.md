@@ -159,3 +159,39 @@ If you have different projects that require different versions of `rgbds`, it mi
 ```bash
 make RGBDS=rgbds-0.x.y/
 ```
+
+## Build the browser bundle
+
+The web player uses the vendored `binjgb` source in `third_party/binjgb`, plus an Emscripten toolchain.
+
+Initialize the submodule first:
+
+```bash
+git submodule update --init --recursive
+```
+
+Install Emscripten with `emsdk`:
+
+```bash
+git clone https://github.com/emscripten-core/emsdk
+cd emsdk
+./emsdk install latest
+./emsdk activate latest
+export EMSCRIPTEN_CMAKE="$PWD/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+source ./emsdk_env.sh
+cd ../pokemon-rgb
+```
+
+Build the browser bundle:
+
+```bash
+make web binjgb_emscripten_cmake="$EMSCRIPTEN_CMAKE"
+```
+
+This creates `dist/web/player.html` and stages the ROM plus WebAssembly assets under `dist/web/assets/`.
+
+To serve it locally:
+
+```bash
+make serve-web
+```

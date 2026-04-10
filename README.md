@@ -22,3 +22,17 @@ This hack was originally posted [here](https://www.romhacking.net/hacks/8100/).
 To download the latest version, go to the [**Releases**](https://github.com/jamescastells/pokemon-rgb/releases) page and grab the latest IPS file. Use an IPS patcher and apply the IPS file to a Pokémon Red ROM.
 
 If you'd like to build from source, see [**INSTALL.md**](INSTALL.md).
+
+## Browser Build
+
+This repository also includes an embeddable browser player that runs `pokered.gbc` through a WebAssembly build of `binjgb`.
+
+To build it locally:
+
+```bash
+git submodule update --init --recursive
+make web binjgb_emscripten_cmake=/absolute/path/to/Emscripten.cmake
+make serve-web
+```
+
+The player is emitted to `dist/web/player.html`, with the ROM, WASM runtime, and version metadata staged under `dist/web/assets/`.
