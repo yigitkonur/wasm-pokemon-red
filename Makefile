@@ -12,6 +12,7 @@ web_sources := \
 	web/player.css \
 	web/player.js
 web_bundle := \
+	$(web_dist)/index.html \
 	$(web_dist)/player.html \
 	$(web_dist)/player.css \
 	$(web_dist)/player.js \
@@ -248,7 +249,7 @@ $(binjgb_build_dir)/docs/binjgb.js: $(binjgb_build_dir)/.demo-built
 $(binjgb_build_dir)/docs/binjgb.wasm: $(binjgb_build_dir)/.demo-built
 	cp $(binjgb_build_dir)/out/Wasm/binjgb.wasm $@
 
-$(web_dist)/player.html: web/player.html | $(web_dist)
+$(web_dist)/index.html $(web_dist)/player.html: web/player.html | $(web_dist)
 	cp $< $@
 
 $(web_dist)/player.css: web/player.css | $(web_dist)
