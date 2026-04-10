@@ -52,10 +52,6 @@ const app = {
   wasRunningBeforeHide: false,
 };
 
-bootstrap().catch((error) => {
-  handleError(error);
-});
-
 async function bootstrap() {
   if (typeof window.Binjgb !== "function") {
     throw new Error("binjgb.js did not load correctly.");
@@ -397,7 +393,11 @@ async function requestFullscreen(element) {
 }
 
 function makeWasmBuffer(module, ptr, size) {
-  return new Uint8Array(module.HEAP8.buffer, ptr, size);
+  const heap = module.HEAPU8 || module.HEAP8;
+  if (!heap) {
+    throw new Error("The emulator heap views were not exported from binjgb.js.");
+  }
+  return new Uint8Array(heap.buffer, ptr, size);
 }
 
 function alignRomBuffer(sourceBuffer) {
@@ -454,6 +454,10 @@ class SessionStore {
     });
   }
 }
+
+bootstrap().catch((error) => {
+  handleError(error);
+});
 
 class EmulatorRuntime {
   constructor(module, romBuffer, options) {

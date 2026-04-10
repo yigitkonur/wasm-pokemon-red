@@ -233,6 +233,7 @@ $(binjgb_build_dir)/.prepared: Makefile $(binjgb_dir) web/binjgb/exported.json w
 	mkdir -p $(binjgb_build_dir)
 	git -C $(binjgb_dir) archive --format=tar HEAD | tar -xf - -C $(binjgb_build_dir)
 	perl -0pi -e 's/cmake_minimum_required\(VERSION 2\.8\)/cmake_minimum_required(VERSION 3.5)/' $(binjgb_build_dir)/CMakeLists.txt
+	perl -0pi -e 's/    -s MALLOC=emmalloc/    -sEXPORTED_RUNTIME_METHODS=HEAP8,HEAPU8\n    -s MALLOC=emmalloc/' $(binjgb_build_dir)/CMakeLists.txt
 	cp web/binjgb/exported.json $(binjgb_build_dir)/src/emscripten/exported.json
 	cp web/binjgb/wrapper.c $(binjgb_build_dir)/src/emscripten/wrapper.c
 	touch $@
