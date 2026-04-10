@@ -1,6 +1,8 @@
-# pokemon-rgb
+# wasm-pokemon-red
 
-`pokemon-rgb` is a Game Boy Color ROM source tree with a static browser deployment pipeline layered on top of it.
+`wasm-pokemon-red` is a GitHub-hosted browser distribution of the `pokemon-rgb` source tree.
+
+The local repository still contains the full `pokemon-rgb` Game Boy Color ROM sources and build graph. The published repository identity is separated from the ROM project identity so the deployed site can be treated as a web runtime product instead of a generic source mirror.
 
 The repository produces two materially different outputs from the same source base:
 
@@ -162,9 +164,13 @@ The workflow is pinned to explicit Pages actions:
 - `actions/upload-pages-artifact@v5`
 - `actions/deploy-pages@v5`
 
-This repo is configured as a GitHub project site, so the expected public URL is:
+For any GitHub project-site deployment, the public URL shape is:
 
-`https://jamescastells.github.io/pokemon-rgb/`
+`https://<owner>.github.io/<repo>/`
+
+For a repository named `wasm-pokemon-red`, that becomes:
+
+`https://<owner>.github.io/wasm-pokemon-red/`
 
 The site root resolves to `dist/web/index.html`, which means the published URL opens the emulator directly instead of requiring `/player.html`.
 
