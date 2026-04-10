@@ -1,0 +1,3 @@
+[submodule "third_party/binjgb"]
+	path = third_party/binjgb
+	url = https://github.com/binji/binjgb
