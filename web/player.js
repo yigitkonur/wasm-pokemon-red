@@ -479,7 +479,7 @@ class EmulatorRuntime {
 
     this.audio = new AudioManager(module, this.e, options.onAudioUnlocked);
     this.video = new VideoManager(module, this.e, options.canvas);
-    this.input = new InputManager(module, this.e, options.touchButtons);
+    this.input = new InputManager(module, this.e, options.touchButtons, elements.screenFrame);
     this.lastRafSec = 0;
     this.leftoverTicks = 0;
     this.rafToken = null;
@@ -529,6 +529,7 @@ class EmulatorRuntime {
   }
 
   run() {
+    this.input.focusFrame();
     this.requestFrame();
   }
 
@@ -879,19 +880,25 @@ class WebGlRenderer {
 }
 
 class InputManager {
-  constructor(module, emulatorHandle, touchButtons) {
+  constructor(module, emulatorHandle, touchButtons, frameElement) {
     this.module = module;
     this.e = emulatorHandle;
+    this.frameElement = frameElement;
     this.keyHandlers = {
       ArrowDown: this.module._set_joyp_down.bind(null, this.e),
       ArrowLeft: this.module._set_joyp_left.bind(null, this.e),
       ArrowRight: this.module._set_joyp_right.bind(null, this.e),
       ArrowUp: this.module._set_joyp_up.bind(null, this.e),
-      Enter: this.module._set_joyp_start.bind(null, this.e),
+      Enter: this.module._set_joyp_A.bind(null, this.e),
+      Escape: this.module._set_joyp_start.bind(null, this.e),
       KeyX: this.module._set_joyp_A.bind(null, this.e),
       KeyZ: this.module._set_joyp_B.bind(null, this.e),
+      ShiftLeft: this.module._set_joyp_B.bind(null, this.e),
+      ShiftRight: this.module._set_joyp_B.bind(null, this.e),
+      Space: this.module._set_joyp_A.bind(null, this.e),
       Tab: this.module._set_joyp_select.bind(null, this.e),
     };
+    this.activeKeyCodes = new Set();
     this.touchButtons = touchButtons;
 
     this.bindKeyboard();
@@ -903,8 +910,18 @@ class InputManager {
   bindKeyboard() {
     this.boundKeyDown = (event) => this.onKey(event, true);
     this.boundKeyUp = (event) => this.onKey(event, false);
+    this.boundPointerDown = (event) => this.onPointerDown(event);
+    this.boundWindowBlur = () => this.releaseActiveKeys();
+    this.boundVisibilityChange = () => {
+      if (document.hidden) {
+        this.releaseActiveKeys();
+      }
+    };
     window.addEventListener("keydown", this.boundKeyDown);
     window.addEventListener("keyup", this.boundKeyUp);
+    window.addEventListener("blur", this.boundWindowBlur);
+    document.addEventListener("pointerdown", this.boundPointerDown);
+    document.addEventListener("visibilitychange", this.boundVisibilityChange);
   }
 
   bindTouchControls() {
@@ -941,18 +958,56 @@ class InputManager {
     });
   }
 
+  focusFrame() {
+    if (!this.frameElement || document.activeElement === this.frameElement) {
+      return;
+    }
+    this.frameElement.focus({preventScroll: true});
+  }
+
+  onPointerDown(event) {
+    if (this.frameElement && this.frameElement.contains(event.target)) {
+      this.focusFrame();
+      return;
+    }
+    this.releaseActiveKeys();
+  }
+
   onKey(event, isDown) {
     const handler = this.keyHandlers[event.code];
     if (!handler) {
       return;
     }
+    if (isDown && event.repeat) {
+      event.preventDefault();
+      return;
+    }
     handler(isDown);
+    if (isDown) {
+      this.activeKeyCodes.add(event.code);
+    } else {
+      this.activeKeyCodes.delete(event.code);
+    }
     event.preventDefault();
   }
 
+  releaseActiveKeys() {
+    this.activeKeyCodes.forEach((code) => {
+      const handler = this.keyHandlers[code];
+      if (handler) {
+        handler(false);
+      }
+    });
+    this.activeKeyCodes.clear();
+  }
+
   destroy() {
+    this.releaseActiveKeys();
     window.removeEventListener("keydown", this.boundKeyDown);
     window.removeEventListener("keyup", this.boundKeyUp);
+    window.removeEventListener("blur", this.boundWindowBlur);
+    document.removeEventListener("pointerdown", this.boundPointerDown);
+    document.removeEventListener("visibilitychange", this.boundVisibilityChange);
     this.touchButtonListeners.forEach(({button, onPress, onRelease}) => {
       button.removeEventListener("pointerdown", onPress);
       button.removeEventListener("pointerup", onRelease);

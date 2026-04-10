@@ -20,7 +20,7 @@
         </div>
       </div>
 
-      <div class="screen-frame" id="screen-frame">
+      <div class="screen-frame" id="screen-frame" tabindex="0">
         <canvas id="screen" width="160" height="144" aria-label="Pokemon RGB display"></canvas>
         <p id="overlay-message" class="overlay-message" aria-live="polite">
           Tap, click, or press a key once to unlock audio.
@@ -29,6 +29,14 @@
 
       <p id="save-label" class="meta-line">Preparing local save storage...</p>
       <p class="meta-line">Link cable battles and trades are disabled in this build.</p>
+      <section class="shortcut-guide" aria-label="Keyboard guide">
+        <p class="shortcut-guide-title">Keyboard guide</p>
+        <p class="shortcut-guide-copy">
+          Use <kbd>Arrow Keys</kbd> to move, <kbd>Space</kbd> or <kbd>Enter</kbd> for <span class="shortcut-label">A</span>,
+          <kbd>Shift</kbd> or <kbd>Z</kbd> for <span class="shortcut-label">B</span>, <kbd>Esc</kbd> for <span class="shortcut-label">Start</span>,
+          and <kbd>Tab</kbd> for <span class="shortcut-label">Select</span>. Clicking outside the player frame releases held keys.
+        </p>
+      </section>
       <p id="error-banner" class="error-banner" hidden></p>
     </section>
 
