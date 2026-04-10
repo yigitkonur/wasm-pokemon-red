@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pokemon RGB Web Player</title>
+  <link rel="stylesheet" href="player.css">
+</head>
+<body>
+  <main class="player-shell">
+    <section class="screen-panel">
+      <div class="screen-header">
+        <div class="title-block">
+          <p class="eyebrow">Pokemon RGB Web</p>
+          <h1>Single-player browser runtime</h1>
+        </div>
+        <div class="status-cluster">
+          <span id="runtime-status" class="pill" aria-live="polite">Loading bundle</span>
+          <span id="build-label" class="pill subtle">build</span>
+        </div>
+      </div>
+
+      <div class="screen-frame" id="screen-frame">
+        <canvas id="screen" width="160" height="144" aria-label="Pokemon RGB display"></canvas>
+        <p id="overlay-message" class="overlay-message" aria-live="polite">
+          Tap, click, or press a key once to unlock audio.
+        </p>
+      </div>
+
+      <p id="save-label" class="meta-line">Preparing local save storage...</p>
+      <p class="meta-line">Link cable battles and trades are disabled in this build.</p>
+      <p id="error-banner" class="error-banner" hidden></p>
+    </section>
+
+    <section class="controls-panel">
+      <div class="control-grid">
+        <button type="button" data-action="pause" id="pause-button">Pause</button>
+        <button type="button" data-action="reset">Reset</button>
+        <button type="button" data-action="fullscreen">Fullscreen</button>
+        <button type="button" data-action="save-state">Save State</button>
+        <button type="button" data-action="load-state">Load State</button>
+        <button type="button" data-action="import-save">Import Save</button>
+        <button type="button" data-action="export-save">Export Save</button>
+        <button type="button" data-action="import-state">Import State</button>
+        <button type="button" data-action="export-state">Export State</button>
+      </div>
+
+      <div class="touch-controls" aria-label="On-screen controls">
+        <div class="dpad">
+          <button type="button" class="touch-button up" data-input="up" aria-label="Up">Up</button>
+          <button type="button" class="touch-button left" data-input="left" aria-label="Left">Left</button>
+          <button type="button" class="touch-button right" data-input="right" aria-label="Right">Right</button>
+          <button type="button" class="touch-button down" data-input="down" aria-label="Down">Down</button>
+        </div>
+
+        <div class="touch-actions">
+          <button type="button" class="touch-button capsule" data-input="select">Select</button>
+          <button type="button" class="touch-button capsule" data-input="start">Start</button>
+          <button type="button" class="touch-button round" data-input="b">B</button>
+          <button type="button" class="touch-button round accent" data-input="a">A</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <input id="import-save-input" type="file" accept=".sav,application/octet-stream" hidden>
+  <input id="import-state-input" type="file" accept=".state,.bin,application/octet-stream" hidden>
+
+  <script src="assets/binjgb.js"></script>
+  <script src="player.js"></script>
+</body>
+</html>

@@ -29,3 +29,7 @@
 *.sn*
 *.sa*
 *.sg1
+
+# web build outputs
+dist/
+web/.build/

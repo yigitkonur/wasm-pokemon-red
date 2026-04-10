@@ -5,6 +5,26 @@ roms := \
 patches := \
 	pokered.patch \
 	pokeblue.patch
+web_dist := dist/web
+web_assets := $(web_dist)/assets
+web_sources := \
+	web/player.html \
+	web/player.css \
+	web/player.js
+web_bundle := \
+	$(web_dist)/player.html \
+	$(web_dist)/player.css \
+	$(web_dist)/player.js \
+	$(web_assets)/pokered.gbc \
+	$(web_assets)/binjgb.js \
+	$(web_assets)/binjgb.wasm \
+	$(web_assets)/version.json \
+	$(web_dist)/NOTICE.binjgb.txt
+binjgb_dir := third_party/binjgb
+binjgb_build_dir := web/.build/binjgb
+binjgb_emscripten_cmake ?=
+web_app_version ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo local)
+binjgb_version := $(shell git -C $(binjgb_dir) describe --tags --always 2>/dev/null || echo unknown)
 
 rom_obj := \
 	audio.o \
@@ -45,7 +65,7 @@ RGBLINK ?= $(RGBDS)rgblink
 .SECONDEXPANSION:
 .PRECIOUS:
 .SECONDARY:
-.PHONY: all red blue blue_debug clean tidy compare tools
+.PHONY: all red blue blue_debug clean tidy compare tools web serve-web clean-web
 
 all: $(roms)
 red:        pokered.gbc
@@ -53,6 +73,8 @@ blue:       pokeblue.gbc
 blue_debug: pokeblue_debug.gbc
 red_vc:     pokered.patch
 blue_vc:    pokeblue.patch
+web:        $(web_bundle)
+serve-web:  web
 
 clean: tidy
 	find gfx \
@@ -61,7 +83,7 @@ clean: tidy
 	        -o -iname '*.pic' \) \
 	     -delete
 
-tidy:
+tidy: clean-web
 	$(RM) $(roms) \
 	      $(roms:.gbc=.sym) \
 	      $(roms:.gbc=.map) \
@@ -78,11 +100,17 @@ tidy:
 	      rgbdscheck.o
 	$(MAKE) clean -C tools/
 
+clean-web:
+	rm -rf $(web_dist) web/.build
+
 compare: $(roms) $(patches)
 	@$(SHA1) -c roms.sha1
 
 tools:
 	$(MAKE) -C tools/
+
+serve-web:
+	python3 -m http.server --directory $(web_dist) 8000
 
 
 RGBASMFLAGS = -Q8 -P includes.asm -Weverything -Wtruncation=1
@@ -193,3 +221,45 @@ gfx/trade/game_boy.2bpp: tools/gfx += --remove-duplicates
 
 %.pic: %.2bpp
 	tools/pkmncompress $< $@
+
+
+### Web bundle rules
+
+$(web_dist) $(web_assets) $(binjgb_build_dir):
+	mkdir -p $@
+
+$(binjgb_build_dir)/.prepared: $(binjgb_dir) web/binjgb/exported.json web/binjgb/wrapper.c | $(binjgb_build_dir)
+	rm -rf $(binjgb_build_dir)
+	mkdir -p $(binjgb_build_dir)
+	git -C $(binjgb_dir) archive --format=tar HEAD | tar -xf - -C $(binjgb_build_dir)
+	cp web/binjgb/exported.json $(binjgb_build_dir)/src/emscripten/exported.json
+	cp web/binjgb/wrapper.c $(binjgb_build_dir)/src/emscripten/wrapper.c
+	touch $@
+
+$(binjgb_build_dir)/docs/binjgb.js $(binjgb_build_dir)/docs/binjgb.wasm: $(binjgb_build_dir)/.prepared
+	$(MAKE) -C $(binjgb_build_dir) demo $(if $(binjgb_emscripten_cmake),EMSCRIPTEN_CMAKE=$(binjgb_emscripten_cmake))
+
+$(web_dist)/player.html: web/player.html | $(web_dist)
+	cp $< $@
+
+$(web_dist)/player.css: web/player.css | $(web_dist)
+	cp $< $@
+
+$(web_dist)/player.js: web/player.js | $(web_dist)
+	cp $< $@
+
+$(web_assets)/pokered.gbc: pokered.gbc | $(web_assets)
+	cp $< $@
+
+$(web_assets)/binjgb.js: $(binjgb_build_dir)/docs/binjgb.js | $(web_assets)
+	cp $< $@
+
+$(web_assets)/binjgb.wasm: $(binjgb_build_dir)/docs/binjgb.wasm | $(web_assets)
+	cp $< $@
+
+$(web_dist)/NOTICE.binjgb.txt: $(binjgb_dir)/LICENSE | $(web_dist)
+	cp $< $@
+
+$(web_assets)/version.json: $(web_assets)/pokered.gbc | $(web_assets)
+	@rom_sha="$$( $(SHA1) $< | awk '{print $$1}' )"; \
+	printf '{\n  "rom": "pokered.gbc",\n  "romSha1": "%s",\n  "appVersion": "%s",\n  "emulatorVersion": "%s"\n}\n' "$$rom_sha" "$(web_app_version)" "$(binjgb_version)" > $@
