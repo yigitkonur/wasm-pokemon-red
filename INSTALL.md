@@ -170,13 +170,13 @@ Initialize the submodule first:
 git submodule update --init --recursive
 ```
 
-Install Emscripten with `emsdk`:
+Install Emscripten `5.0.5` with `emsdk`:
 
 ```bash
 git clone https://github.com/emscripten-core/emsdk
 cd emsdk
-./emsdk install latest
-./emsdk activate latest
+./emsdk install 5.0.5
+./emsdk activate 5.0.5
 export EMSCRIPTEN_CMAKE="$PWD/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
 source ./emsdk_env.sh
 cd ../pokemon-rgb
@@ -188,7 +188,7 @@ Build the browser bundle:
 make web binjgb_emscripten_cmake="$EMSCRIPTEN_CMAKE"
 ```
 
-This creates `dist/web/player.html` and stages the ROM plus WebAssembly assets under `dist/web/assets/`.
+This creates `dist/web/index.html`, `dist/web/player.html`, and stages the ROM plus WebAssembly assets under `dist/web/assets/`.
 
 To serve it locally:
 
