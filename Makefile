@@ -228,16 +228,24 @@ gfx/trade/game_boy.2bpp: tools/gfx += --remove-duplicates
 $(web_dist) $(web_assets) $(binjgb_build_dir):
 	mkdir -p $@
 
-$(binjgb_build_dir)/.prepared: $(binjgb_dir) web/binjgb/exported.json web/binjgb/wrapper.c | $(binjgb_build_dir)
+$(binjgb_build_dir)/.prepared: Makefile $(binjgb_dir) web/binjgb/exported.json web/binjgb/wrapper.c | $(binjgb_build_dir)
 	rm -rf $(binjgb_build_dir)
 	mkdir -p $(binjgb_build_dir)
 	git -C $(binjgb_dir) archive --format=tar HEAD | tar -xf - -C $(binjgb_build_dir)
+	perl -0pi -e 's/cmake_minimum_required\(VERSION 2\.8\)/cmake_minimum_required(VERSION 3.5)/' $(binjgb_build_dir)/CMakeLists.txt
 	cp web/binjgb/exported.json $(binjgb_build_dir)/src/emscripten/exported.json
 	cp web/binjgb/wrapper.c $(binjgb_build_dir)/src/emscripten/wrapper.c
 	touch $@
 
-$(binjgb_build_dir)/docs/binjgb.js $(binjgb_build_dir)/docs/binjgb.wasm: $(binjgb_build_dir)/.prepared
+$(binjgb_build_dir)/.demo-built: $(binjgb_build_dir)/.prepared
 	$(MAKE) -C $(binjgb_build_dir) demo $(if $(binjgb_emscripten_cmake),EMSCRIPTEN_CMAKE=$(binjgb_emscripten_cmake))
+	touch $@
+
+$(binjgb_build_dir)/docs/binjgb.js: $(binjgb_build_dir)/.demo-built
+	cp $(binjgb_build_dir)/out/Wasm/binjgb.js $@
+
+$(binjgb_build_dir)/docs/binjgb.wasm: $(binjgb_build_dir)/.demo-built
+	cp $(binjgb_build_dir)/out/Wasm/binjgb.wasm $@
 
 $(web_dist)/player.html: web/player.html | $(web_dist)
 	cp $< $@
