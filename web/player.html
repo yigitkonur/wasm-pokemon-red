@@ -12,10 +12,10 @@
     <header class="site-header page-pad">
       <div class="site-header__row">
         <nav class="site-nav" aria-label="Primary">
-          <a class="site-nav__link" href="https://blog.yigitkonur.com/">Essays</a>
-          <a class="site-nav__link" href="https://blog.yigitkonur.com/research">Research</a>
-          <a class="site-nav__link" href="https://blog.yigitkonur.com/projects" aria-current="page">Projects</a>
-          <a class="site-nav__link" href="https://blog.yigitkonur.com/about">About</a>
+          <a class="site-nav__link" tabindex="-1" href="https://blog.yigitkonur.com/">Essays</a>
+          <a class="site-nav__link" tabindex="-1" href="https://blog.yigitkonur.com/research">Research</a>
+          <a class="site-nav__link" tabindex="-1" href="https://blog.yigitkonur.com/projects" aria-current="page">Projects</a>
+          <a class="site-nav__link" tabindex="-1" href="https://blog.yigitkonur.com/about">About</a>
         </nav>
       </div>
     </header>
@@ -50,15 +50,15 @@
         <section class="controls-section">
           <p class="caps-label">Controls</p>
           <div class="control-grid">
-            <button type="button" data-action="pause" id="pause-button">Pause</button>
-            <button type="button" data-action="reset">Reset</button>
-            <button type="button" data-action="fullscreen">Fullscreen</button>
-            <button type="button" data-action="save-state">Save State</button>
-            <button type="button" data-action="load-state">Load State</button>
-            <button type="button" data-action="import-save">Import Save</button>
-            <button type="button" data-action="export-save">Export Save</button>
-            <button type="button" data-action="import-state">Import State</button>
-            <button type="button" data-action="export-state">Export State</button>
+            <button type="button" tabindex="-1" data-action="pause" id="pause-button">Pause</button>
+            <button type="button" tabindex="-1" data-action="reset">Reset</button>
+            <button type="button" tabindex="-1" data-action="fullscreen">Fullscreen</button>
+            <button type="button" tabindex="-1" data-action="save-state">Save State</button>
+            <button type="button" tabindex="-1" data-action="load-state">Load State</button>
+            <button type="button" tabindex="-1" data-action="import-save">Import Save</button>
+            <button type="button" tabindex="-1" data-action="export-save">Export Save</button>
+            <button type="button" tabindex="-1" data-action="import-state">Import State</button>
+            <button type="button" tabindex="-1" data-action="export-state">Export State</button>
           </div>
 
           <div class="touch-controls" aria-label="On-screen controls">
@@ -79,12 +79,30 @@
 
         <!-- Keyboard Guide -->
         <section class="keyboard-guide" aria-label="Keyboard guide">
-          <p class="caps-label">Keyboard guide</p>
-          <p class="keyboard-guide-copy">
-            Use <kbd>Arrow Keys</kbd> to move, <kbd>Space</kbd> or <kbd>Enter</kbd> for <span class="shortcut-label">A</span>,
-            <kbd>Shift</kbd> or <kbd>Z</kbd> for <span class="shortcut-label">B</span>, <kbd>Esc</kbd> for <span class="shortcut-label">Start</span>,
-            and <kbd>Tab</kbd> for <span class="shortcut-label">Select</span>. Clicking outside the player frame releases held keys.
-          </p>
+          <p class="caps-label">Keyboard</p>
+          <div class="key-grid">
+            <div class="key-mapping">
+              <kbd>↑ ↓ ← →</kbd>
+              <span class="key-action">D-Pad</span>
+            </div>
+            <div class="key-mapping">
+              <kbd>Space</kbd> / <kbd>Enter</kbd>
+              <span class="key-action">A Button</span>
+            </div>
+            <div class="key-mapping">
+              <kbd>Shift</kbd> / <kbd>Z</kbd>
+              <span class="key-action">B Button</span>
+            </div>
+            <div class="key-mapping">
+              <kbd>Esc</kbd>
+              <span class="key-action">Start</span>
+            </div>
+            <div class="key-mapping">
+              <kbd>Tab</kbd>
+              <span class="key-action">Select</span>
+            </div>
+          </div>
+          <p class="keyboard-guide-note">Click the game screen to focus it. Clicking outside releases all held keys.</p>
         </section>
 
         <!-- Error Banner -->
@@ -95,9 +113,9 @@
 
     <footer class="site-footer page-pad">
       <div class="footer-row">
-        <a class="footer-link" href="https://x.com/yigitkonur" target="_blank" rel="noopener noreferrer">X</a>
-        <a class="footer-link" href="https://linkedin.com/in/yigitkonur" target="_blank" rel="noopener noreferrer">LinkedIn</a>
-        <a class="footer-link" href="https://github.com/yigitkonur" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a class="footer-link" tabindex="-1" href="https://x.com/yigitkonur" target="_blank" rel="noopener noreferrer">X</a>
+        <a class="footer-link" tabindex="-1" href="https://linkedin.com/in/yigitkonur" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        <a class="footer-link" tabindex="-1" href="https://github.com/yigitkonur" target="_blank" rel="noopener noreferrer">GitHub</a>
       </div>
     </footer>
 

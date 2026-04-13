@@ -90,7 +90,9 @@ async function bootstrap() {
 function bindUi() {
   document.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => {
-      handleAction(button.dataset.action).catch((error) => handleError(error));
+      handleAction(button.dataset.action)
+        .catch((error) => handleError(error))
+        .finally(() => elements.screenFrame.focus({preventScroll: true}));
     });
   });
 

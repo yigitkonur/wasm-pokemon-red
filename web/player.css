@@ -336,11 +336,15 @@ a:hover {
   background: var(--color-surface-elevated);
   box-shadow: var(--shadow-md);
   outline: none;
+  transition: box-shadow 0.2s;
 }
 
 .screen-frame:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: 2px;
+  box-shadow: var(--shadow-md), 0 0 0 3px var(--color-focus-ring);
+}
+
+.screen-frame:focus {
+  box-shadow: var(--shadow-md), 0 0 0 2px color-mix(in srgb, var(--color-focus-ring) 40%, transparent);
 }
 
 #screen {
@@ -368,6 +372,12 @@ a:hover {
   font-size: 0.8125rem;
   font-family: var(--font-mono);
   box-shadow: var(--shadow-sm);
+  animation: overlay-pulse 2s ease-in-out infinite;
+}
+
+@keyframes overlay-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
 .overlay-message[hidden] {
@@ -417,6 +427,13 @@ a:hover {
 .control-grid button:hover:not(:disabled) {
   background: var(--color-border-strong);
   color: var(--color-text-primary);
+}
+
+.control-grid button:active:not(:disabled) {
+  background: var(--color-interactive);
+  color: var(--color-text-inverse);
+  box-shadow: var(--shadow-sm);
+  transform: scale(0.97);
 }
 
 .control-grid button:focus-visible {
@@ -482,6 +499,10 @@ a:hover {
   color: var(--color-text-primary);
 }
 
+.touch-button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
 .touch-button:disabled {
   cursor: wait;
   opacity: 0.5;
@@ -524,25 +545,54 @@ a:hover {
   border-top: 1px solid var(--color-border);
 }
 
-.keyboard-guide-copy {
-  margin: 0.75rem 0 0;
-  color: var(--color-text-secondary);
-  font-size: 0.875rem;
-  line-height: 1.7;
+.key-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
 }
 
-.keyboard-guide kbd {
+.key-mapping {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-ring);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+
+.key-mapping kbd {
   display: inline-flex;
   align-items: center;
   height: 1.5rem;
   padding: 0 0.4rem;
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  background: var(--color-bg);
   box-shadow: var(--shadow-ring);
   color: var(--color-text-primary);
   font-family: var(--font-mono);
   font-size: 0.75rem;
   white-space: nowrap;
+}
+
+.key-action {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.keyboard-guide-note {
+  margin: 0.75rem 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }
 
 .shortcut-label {
@@ -600,7 +650,9 @@ a:hover {
 
 /* ── Focus Utilities ─────────────────────────────────────── */
 
-:focus-visible {
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
   outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
