@@ -9,7 +9,6 @@
 #include <stdlib.h>
 
 #include "emulator.h"
-#include "emulator-debug.h"
 #include "joypad.h"
 #include "memory.h"
 #include "rewind.h"
@@ -196,13 +195,4 @@ void file_data_delete(FileData* file_data) {
   xfree(file_data);
 }
 
-/* Read a byte from the Game Boy's address space (0x0000-0xFFFF). */
-u8 read_u8(Emulator* e, u16 addr) {
-  return emulator_read_u8_raw(e, (Address)addr);
-}
 
-/* Read a 16-bit big-endian value (hi at addr, lo at addr+1). */
-u16 read_u16_be(Emulator* e, u16 addr) {
-  return ((u16)emulator_read_u8_raw(e, (Address)addr) << 8) |
-         (u16)emulator_read_u8_raw(e, (Address)(addr + 1));
-}

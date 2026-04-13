@@ -10,12 +10,14 @@ web_assets := $(web_dist)/assets
 web_sources := \
 	web/player.html \
 	web/player.css \
-	web/player.js
+	web/player.js \
+	web/autoplay.js
 web_bundle := \
 	$(web_dist)/index.html \
 	$(web_dist)/player.html \
 	$(web_dist)/player.css \
 	$(web_dist)/player.js \
+	$(web_dist)/autoplay.js \
 	$(web_assets)/pokered.gbc \
 	$(web_assets)/binjgb.js \
 	$(web_assets)/binjgb.wasm \
@@ -256,6 +258,9 @@ $(web_dist)/player.css: web/player.css | $(web_dist)
 	cp $< $@
 
 $(web_dist)/player.js: web/player.js | $(web_dist)
+	cp $< $@
+
+$(web_dist)/autoplay.js: web/autoplay.js | $(web_dist)
 	cp $< $@
 
 $(web_assets)/pokered.gbc: pokered.gbc | $(web_assets)
