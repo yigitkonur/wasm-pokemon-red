@@ -410,18 +410,26 @@ function initMultiplayer() {
   if (elements.mpJoinBtn) {
     elements.mpJoinBtn.addEventListener("click", async function () {
       if (!mp.turn.joined) {
-        // Update nickname before joining
-        if (nickInput && nickInput.value.trim()) {
-          mp.setNickname(nickInput.value.trim());
+        elements.mpJoinBtn.disabled = true;
+        elements.mpJoinBtn.textContent = "Connecting...";
+        try {
+          if (nickInput && nickInput.value.trim()) {
+            mp.setNickname(nickInput.value.trim());
+          }
+          if (app.emulator) mp.setEmulator(app.emulator);
+          await mp.start();
+          elements.mpJoinBtn.textContent = "Leave Game";
+          elements.mpJoinBtn.classList.add("joined");
+          if (elements.mpBar) elements.mpBar.hidden = false;
+          if (elements.chatPanel) elements.chatPanel.hidden = false;
+          if (nickInput) nickInput.disabled = true;
+        } catch (err) {
+          console.error("[MP] join failed:", err);
+          elements.mpJoinBtn.textContent = "Join Game";
+          mp.turn.joined = false;
+        } finally {
+          elements.mpJoinBtn.disabled = false;
         }
-        // Connect emulator
-        if (app.emulator) mp.setEmulator(app.emulator);
-        await mp.start();
-        elements.mpJoinBtn.textContent = "Leave Game";
-        elements.mpJoinBtn.classList.add("joined");
-        if (elements.mpBar) elements.mpBar.hidden = false;
-        if (elements.chatPanel) elements.chatPanel.hidden = false;
-        if (nickInput) nickInput.disabled = true;
       } else {
         await mp.stop();
         elements.mpJoinBtn.textContent = "Join Game";
