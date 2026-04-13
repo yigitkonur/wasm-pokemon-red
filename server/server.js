@@ -3,6 +3,7 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 const express = require('express');
 const cors = require('cors');
+const { randomUUID } = require('crypto');
 
 const PORT = process.env.PORT || 3000;
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || 'https://shining-aphid-98269.upstash.io';
@@ -196,7 +197,7 @@ async function handleChat(ws, { text }) {
   text = (text || '').trim();
   if (!text || text.length > 280) return;
 
-  const msg = { id: crypto.randomUUID(), pid: info.id, nick: info.nickname, text, ts: Date.now() };
+  const msg = { id: randomUUID(), pid: info.id, nick: info.nickname, text, ts: Date.now() };
   const msgStr = JSON.stringify(msg);
 
   // Broadcast to all clients immediately
@@ -258,7 +259,7 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws, req) => {
   // Generate a temp ID until JOIN is received
-  const connId = crypto.randomUUID();
+  const connId = randomUUID();
   clients.set(ws, { id: connId, nickname: 'Spectator', joined: false });
   console.log(`[ws] connect: ${connId} (total: ${clients.size})`);
 
