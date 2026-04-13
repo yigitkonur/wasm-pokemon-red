@@ -46,14 +46,43 @@
           <p class="meta-line">Link cable battles and trades are disabled in this build.</p>
         </section>
 
-        <!-- Controls -->
-        <section class="controls-section">
-          <p class="caps-label">Controls</p>
+        <!-- Player Bar — unified toolbar -->
+        <section class="player-bar-section">
+          <div class="player-bar">
+            <div class="player-bar__left">
+              <button type="button" tabindex="-1" data-action="pause" id="pause-button" class="bar-btn" aria-label="Pause">
+                <svg class="bar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              </button>
+              <button type="button" tabindex="-1" data-action="reset" class="bar-btn" aria-label="Reset">
+                <svg class="bar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
+            </div>
+
+            <div class="player-bar__center">
+              <div class="speed-control" role="group" aria-label="Emulation speed">
+                <button type="button" tabindex="-1" class="speed-btn active" data-speed="1">1×</button>
+                <button type="button" tabindex="-1" class="speed-btn" data-speed="2">2×</button>
+                <button type="button" tabindex="-1" class="speed-btn" data-speed="4">4×</button>
+                <button type="button" tabindex="-1" class="speed-btn turbo" data-speed="0">⚡</button>
+              </div>
+            </div>
+
+            <div class="player-bar__right">
+              <button type="button" tabindex="-1" data-action="autoplay" id="autoplay-button" class="bar-btn autoplay-toggle" aria-label="AutoPlay">
+                <svg class="bar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                <span class="bar-btn-label">AI</span>
+              </button>
+              <button type="button" tabindex="-1" data-action="fullscreen" class="bar-btn" aria-label="Fullscreen">
+                <svg class="bar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Secondary Controls (collapsed by default) -->
+        <details class="secondary-controls">
+          <summary class="caps-label more-controls-toggle">More Controls</summary>
           <div class="control-grid">
-            <button type="button" tabindex="-1" data-action="pause" id="pause-button">Pause</button>
-            <button type="button" tabindex="-1" data-action="reset">Reset</button>
-            <button type="button" tabindex="-1" data-action="fullscreen">Fullscreen</button>
-            <button type="button" tabindex="-1" data-action="autoplay" id="autoplay-button" class="autoplay-toggle">🤖 AutoPlay</button>
             <button type="button" tabindex="-1" data-action="save-state">Save State</button>
             <button type="button" tabindex="-1" data-action="load-state">Load State</button>
             <button type="button" tabindex="-1" data-action="import-save">Import Save</button>
@@ -61,6 +90,10 @@
             <button type="button" tabindex="-1" data-action="import-state">Import State</button>
             <button type="button" tabindex="-1" data-action="export-state">Export State</button>
           </div>
+        </details>
+
+        <!-- Touch & Controls wrapper -->
+        <section class="controls-section">
 
           <div class="touch-controls" aria-label="On-screen controls">
             <div class="dpad">
@@ -120,6 +153,11 @@
               </div>
             </div>
 
+            <div class="autoplay-stat-group">
+              <p class="autoplay-stat-label">Activity Log</p>
+              <div class="autoplay-log" id="autoplay-log"></div>
+            </div>
+
             <div class="autoplay-meta">
               <div class="meta-item">
                 <span class="meta-key">Map</span>
@@ -164,6 +202,10 @@
             <div class="key-mapping">
               <kbd>Tab</kbd>
               <span class="key-action">Select</span>
+            </div>
+            <div class="key-mapping">
+              <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd>
+              <span class="key-action">Speed 1× 2× 4× Turbo</span>
             </div>
           </div>
           <p class="keyboard-guide-note">Click the game screen to focus it. Clicking outside releases all held keys.</p>

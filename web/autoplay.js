@@ -578,6 +578,13 @@ class Autoplay {
     this.stuckFrames = 0;
     this.lastInteractFrame = 0;
 
+    // Ring buffer for position history (stuck detection)
+    this.positionHistory = [];
+    this.positionHistoryIdx = 0;
+    this.POSITION_HISTORY_SIZE = 30;
+    this.consecutiveStuckEvents = 0;
+    this.positionSampleCounter = 0;
+
     // Battle state
     this.inBattle = false;
     this.battleAction = "";
@@ -587,6 +594,25 @@ class Autoplay {
     // Statistics
     this.encountersWon = 0;
     this.encountersFled = 0;
+
+    // Battle state transition tracking
+    this.lastState = "idle";
+    this.battleEndCooldown = 0;
+    this.battleSubStateTicks = 0;
+
+    // Activity log
+    this.activityLog = [];
+    this.MAX_LOG_ENTRIES = 50;
+
+    // Speed hint
+    this._speedHintCallback = null;
+
+    // Encounter species tracking
+    this.speciesEncountered = {};
+    this.recentSpecies = []; // last 10 species for grinding fatigue
+
+    // Uptime
+    this.startTime = Date.now();
 
     // Memory read mode
     this.hasDirectRead = typeof module._read_u8 === "function";
@@ -608,11 +634,9 @@ class Autoplay {
     };
 
     if (!this.hasDirectRead) {
-      console.warn(
-        "[AutoPlay] module._read_u8 not found; using state-capture fallback (slower)."
-      );
+      this._log("module._read_u8 not found; using state-capture fallback (slower).", "warn");
     }
-    console.log("[AutoPlay] Initialized. Call .start() to begin.");
+    this._log("Initialized. Call .start() to begin.");
   }
 
   /* -----------------------------------------------------------------
@@ -623,7 +647,7 @@ class Autoplay {
     if (this.active) return;
     this.active = true;
     this.intervalId = setInterval(() => this._safeTick(), 16);
-    console.log("[AutoPlay] Started.");
+    this._log("Started.");
   }
 
   stop() {
@@ -634,7 +658,7 @@ class Autoplay {
       this.intervalId = null;
     }
     this.releaseAll();
-    console.log("[AutoPlay] Stopped.");
+    this._log("Stopped.");
   }
 
   toggle() {
@@ -659,6 +683,11 @@ class Autoplay {
       pokemon: null,
       opponent: null,
       party: [],
+      log: this.activityLog.slice(-5),
+      isReady: this.isReady(),
+      mode: this.hasDirectRead ? "direct" : "fallback",
+      uptime: Math.floor((Date.now() - this.startTime) / 1000),
+      speciesEncountered: Object.assign({}, this.speciesEncountered),
     };
 
     // Lead pokemon info
@@ -701,6 +730,61 @@ class Autoplay {
     }
 
     return result;
+  }
+
+  /**
+   * Returns true only when memory reading is working reliably.
+   */
+  isReady() {
+    if (this.hasDirectRead) return true;
+    if (!this.stateCache || this.wramBaseOffset < 0) return false;
+    // Validate current readings are still sensible
+    try {
+      const party = this.readU8(ADDR.PARTY_SIZE);
+      return party >= 1 && party <= 6;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Register a callback for speed hint suggestions.
+   * The callback receives a multiplier (e.g. 1 for normal, 4 for fast-forward).
+   * @param {function} callback
+   */
+  setSpeedHint(callback) {
+    this._speedHintCallback = callback;
+  }
+
+  /**
+   * Get activity log entries since a given timestamp.
+   * @param {number} since - Unix timestamp in ms (default 0 = all entries).
+   * @returns {Array<{time: number, message: string, type: string}>}
+   */
+  getLog(since = 0) {
+    return this.activityLog.filter(e => e.time > since);
+  }
+
+  /* -----------------------------------------------------------------
+   * Activity Logging
+   * ----------------------------------------------------------------- */
+
+  /**
+   * Log an event to the activity log and console.
+   * @param {string} message
+   * @param {string} type - 'info' | 'battle' | 'explore' | 'heal' | 'warn'
+   * @private
+   */
+  _log(message, type = "info") {
+    this.activityLog.push({
+      time: Date.now(),
+      message,
+      type,
+    });
+    if (this.activityLog.length > this.MAX_LOG_ENTRIES) {
+      this.activityLog.shift();
+    }
+    console.log(`[AutoPlay] ${message}`);
   }
 
   /* -----------------------------------------------------------------
@@ -769,8 +853,9 @@ class Autoplay {
         this.stateCacheAge = 0;
       }
     } catch (err) {
-      console.warn("[AutoPlay] State capture failed:", err.message);
+      this._log("State capture failed: " + err.message, "warn");
       this.stateCache = null;
+      this.wramBaseOffset = -1;
     }
   }
 
@@ -787,16 +872,28 @@ class Autoplay {
     // Scan for a block where offset 0x1163 holds 0-6
     for (let base = 0; base <= this.stateCache.length - wramSize; base += 4) {
       const val = this.stateCache[base + partyCountOffset];
-      if (val >= 1 && val <= 6) {
-        // Additional validation: check that species bytes make sense
-        const speciesOffset = ADDR.PARTY_START - 0xC000; // 0x116B
-        const species = this.stateCache[base + speciesOffset];
-        if (species > 0 && species < 0xBF && POKEMON_NAMES[species]) {
-          this.wramBaseOffset = base;
-          console.log(`[AutoPlay] Found WRAM at state offset 0x${base.toString(16)}`);
-          return;
-        }
-      }
+      if (val < 1 || val > 6) continue;
+
+      // Validation 1: species byte should be a known Pokemon
+      const speciesOffset = ADDR.PARTY_START - 0xC000; // 0x116B
+      const species = this.stateCache[base + speciesOffset];
+      if (species === 0 || species >= 0xBF || !POKEMON_NAMES[species]) continue;
+
+      // Validation 2: player coordinates should be in reasonable range
+      const playerXOffset = ADDR.PLAYER_X - 0xC000;
+      const playerYOffset = ADDR.PLAYER_Y - 0xC000;
+      const px = this.stateCache[base + playerXOffset];
+      const py = this.stateCache[base + playerYOffset];
+      if (px > 100 || py > 100) continue;
+
+      // Validation 3: map ID should be valid (< 0xFF, not garbage)
+      const mapOffset = ADDR.MAP_ID - 0xC000;
+      const mapId = this.stateCache[base + mapOffset];
+      if (mapId >= 0xFF) continue;
+
+      this.wramBaseOffset = base;
+      this._log(`Found WRAM at state offset 0x${base.toString(16)}`, "info");
+      return;
     }
     // Didn't find it — will retry next cache refresh
   }
@@ -838,7 +935,7 @@ class Autoplay {
     } catch (err) {
       // Never crash the bot loop
       if (this.tickCount % 300 === 0) {
-        console.error("[AutoPlay] Tick error:", err.message);
+        this._log("Tick error: " + err.message, "warn");
       }
     }
   }
@@ -850,6 +947,12 @@ class Autoplay {
     // Process held button releases
     this._processHeldButtons();
 
+    // Battle end cooldown
+    if (this.battleEndCooldown > 0) {
+      this.battleEndCooldown--;
+      return;
+    }
+
     // If still in input cooldown, skip decision-making
     if (this.inputCooldown > 0) {
       this.inputCooldown--;
@@ -857,6 +960,12 @@ class Autoplay {
     }
 
     const state = this.detectState();
+
+    // Track battle → overworld transitions
+    if (this.lastState === "battling" && state !== "battling") {
+      this._onBattleEnd();
+    }
+    this.lastState = state;
 
     switch (state) {
       case "battling":
@@ -967,22 +1076,54 @@ class Autoplay {
     const moving = this._tryRead(ADDR.PLAYER_MOVING);
     const mapId = this._tryRead(ADDR.MAP_ID);
 
-    // Anti-stuck detection
-    if (x === this.lastPosition.x && y === this.lastPosition.y) {
-      this.stuckFrames++;
-    } else {
-      this.stuckFrames = 0;
-      this.lastPosition = { x, y };
-    }
+    // Ring buffer position sampling (every ~15 ticks)
+    this.positionSampleCounter++;
+    if (this.positionSampleCounter >= 15) {
+      this.positionSampleCounter = 0;
+      const pos = (x << 8) | y; // pack x,y into one number
+      if (this.positionHistory.length < this.POSITION_HISTORY_SIZE) {
+        this.positionHistory.push(pos);
+      } else {
+        this.positionHistory[this.positionHistoryIdx] = pos;
+      }
+      this.positionHistoryIdx = (this.positionHistoryIdx + 1) % this.POSITION_HISTORY_SIZE;
 
-    // If stuck for >300 frames (~5s), try random direction + A
-    if (this.stuckFrames > 300) {
-      this.stuckFrames = 0;
-      this.currentDirection = this._randomDirection();
-      this.pressButton("a", 6);
-      this.inputCooldown = 10;
-      console.log("[AutoPlay] Stuck — trying random direction:", this.currentDirection);
-      return;
+      // Check if all positions in the ring buffer are identical
+      if (this.positionHistory.length >= this.POSITION_HISTORY_SIZE) {
+        const allSame = this.positionHistory.every(p => p === this.positionHistory[0]);
+        if (allSame) {
+          this.consecutiveStuckEvents++;
+          this._log(`Stuck detected (event #${this.consecutiveStuckEvents}) at x=${x} y=${y}`, "warn");
+
+          // Escalating escape strategy
+          if (this.consecutiveStuckEvents >= 3) {
+            // Level 3: press B to cancel menus, then A to interact
+            this.pressButton("b", 6);
+            this.inputCooldown = 8;
+            setTimeout(() => {
+              if (this.active) {
+                this.pressButton("a", 6);
+              }
+            }, 150);
+          } else if (this.consecutiveStuckEvents >= 2) {
+            // Level 2: press B to dismiss possible menu
+            this.pressButton("b", 6);
+            this.inputCooldown = 10;
+          } else {
+            // Level 1: random direction change
+            this.currentDirection = this._randomDirection();
+            this.pressButton(this.currentDirection, 8);
+            this.inputCooldown = 10;
+          }
+
+          // Reset ring buffer after escape attempt
+          this.positionHistory = [];
+          this.positionHistoryIdx = 0;
+          return;
+        } else {
+          this.consecutiveStuckEvents = 0;
+        }
+      }
     }
 
     // If in a Pokemon Center, try to walk toward the nurse
@@ -1053,13 +1194,27 @@ class Autoplay {
     if (battleType > 0 && !this.inBattle) {
       this.inBattle = true;
       this.battleSubState = "idle";
+      this.battleSubStateTicks = 0;
       this.lastBattleType = battleType;
       const oppSpecies = this._tryRead(ADDR.OPP_ID);
       const oppName = POKEMON_NAMES[oppSpecies] || `#${oppSpecies}`;
       const oppLevel = this._tryRead(ADDR.OPP_LEVEL);
-      console.log(
-        `[AutoPlay] Battle started (${battleType === 1 ? "wild" : "trainer"}) vs ${oppName} Lv${oppLevel}`
+
+      // Track species encounters
+      this.speciesEncountered[oppSpecies] = (this.speciesEncountered[oppSpecies] || 0) + 1;
+      this.recentSpecies.push(oppSpecies);
+      if (this.recentSpecies.length > 10) this.recentSpecies.shift();
+
+      this._log(
+        `Battle started (${battleType === 1 ? "wild" : "trainer"}) vs ${oppName} Lv${oppLevel}`,
+        "battle"
       );
+
+      // Speed hint: fast-forward if grinding a low-level opponent
+      const ourLevel = this._tryRead(ADDR.OUR_LEVEL);
+      if (this._speedHintCallback && ourLevel >= oppLevel + 5) {
+        this._speedHintCallback(4);
+      }
     }
 
     // Check if our Pokemon fainted
@@ -1103,13 +1258,45 @@ class Autoplay {
 
   /**
    * Decide whether to run from a wild battle.
-   * Run if our lead is 10+ levels higher than opponent.
+   * Runs if:
+   * - Our lead is 10+ levels higher than opponent
+   * - We've fought 3+ of the same species recently (grinding fatigue)
+   * - HP below 30% and no healing items
+   * - There's a Pokemon Center nearby
    * @private
    */
   _shouldRun() {
     const ourLevel = this._tryRead(ADDR.OUR_LEVEL);
     const oppLevel = this._tryRead(ADDR.OPP_LEVEL);
-    return ourLevel >= oppLevel + 10;
+
+    // Classic level gap check
+    if (ourLevel >= oppLevel + 10) return true;
+
+    // Grinding fatigue: fought 3+ of same species recently
+    const oppSpecies = this._tryRead(ADDR.OPP_ID);
+    const recentSameCount = this.recentSpecies.filter(s => s === oppSpecies).length;
+    if (recentSameCount >= 3) return true;
+
+    // Low HP check: run if HP < 30% and no potions
+    const ourHp = (this._tryRead(ADDR.OUR_HP_HI) << 8) | this._tryRead(ADDR.OUR_HP_LO);
+    const ourMaxHp = (this._tryRead(ADDR.OUR_MAX_HP_HI) << 8) | this._tryRead(ADDR.OUR_MAX_HP_LO);
+    if (ourMaxHp > 0 && ourHp < ourMaxHp * 0.3) {
+      // Check inventory for healing items (Potion=0x14, Super Potion=0x19, Hyper Potion=0x1A, Max Potion=0x1B, Full Restore=0x10)
+      const healingItems = new Set([0x14, 0x19, 0x1A, 0x1B, 0x10]);
+      const invCount = this._tryRead(ADDR.INVENTORY_COUNT);
+      let hasHealing = false;
+      for (let i = 0; i < Math.min(invCount, 20); i++) {
+        const itemId = this._tryRead(ADDR.INVENTORY_START + i * 2);
+        if (healingItems.has(itemId)) { hasHealing = true; break; }
+      }
+      if (!hasHealing) return true;
+    }
+
+    // Near a Pokemon Center — check if last map was a center
+    const mapId = this._tryRead(ADDR.MAP_ID);
+    if (POKEMON_CENTER_MAPS.has(mapId)) return true;
+
+    return false;
   }
 
   /**
@@ -1151,6 +1338,18 @@ class Autoplay {
       this.battleAction = "Attacking";
     }
 
+    // Timeout: if stuck in same sub-state for 120+ ticks, reset
+    this.battleSubStateTicks++;
+    if (this.battleSubStateTicks >= 120) {
+      this._log("Battle sub-state timeout, resetting to idle", "warn");
+      this.battleSubState = "idle";
+      this.battleSubStateTicks = 0;
+      this.releaseAll();
+      this.pressButton("b", 4);
+      this.inputCooldown = 8;
+      return;
+    }
+
     // Sequence: navigate to Fight (top-left), press A, then select move
     switch (this.battleSubState) {
       case "idle":
@@ -1159,6 +1358,7 @@ class Autoplay {
         this.pressButton("up", 3);
         this.inputCooldown = 4;
         this.battleSubState = "fight_up";
+        this.battleSubStateTicks = 0;
         break;
 
       case "fight_up":
@@ -1171,6 +1371,7 @@ class Autoplay {
         this.pressButton("a", 4);
         this.inputCooldown = 8;
         this.battleSubState = "selecting_move";
+        this.battleSubStateTicks = 0;
         break;
 
       case "selecting_move":
@@ -1178,17 +1379,20 @@ class Autoplay {
         this.pressButton("a", 4);
         this.inputCooldown = 10;
         this.battleSubState = "idle";
+        this.battleSubStateTicks = 0;
         break;
 
       case "selecting_run":
         // Reset after a failed run attempt
         this.battleSubState = "idle";
+        this.battleSubStateTicks = 0;
         this.pressButton("a", 4);
         this.inputCooldown = 6;
         break;
 
       default:
         this.battleSubState = "idle";
+        this.battleSubStateTicks = 0;
         this.pressButton("a", 4);
         this.inputCooldown = 6;
         break;
@@ -1201,17 +1405,22 @@ class Autoplay {
    * @private
    */
   _navigateToMove(slot) {
+    // 2×2 grid: row = floor(slot/2), col = slot % 2
+    // slot 0=top-left, 1=top-right, 2=bottom-left, 3=bottom-right
+    const targetRow = Math.floor(slot / 2);
+    const targetCol = slot % 2;
+
     // Reset cursor to top-left first
     this.pressButton("up", 2);
     this.pressButton("left", 2);
 
-    if (slot === 1 || slot === 3) {
-      // Right column
-      setTimeout(() => this.active && this.pressButton("right", 2), 50);
+    // Navigate to target column
+    if (targetCol === 1) {
+      setTimeout(() => this.active && this.pressButton("right", 2), 60);
     }
-    if (slot === 2 || slot === 3) {
-      // Bottom row
-      setTimeout(() => this.active && this.pressButton("down", 2), 50);
+    // Navigate to target row
+    if (targetRow === 1) {
+      setTimeout(() => this.active && this.pressButton("down", 2), 60);
     }
   }
 
@@ -1261,13 +1470,34 @@ class Autoplay {
   _checkBattleEnd() {
     const battleType = this._tryRead(ADDR.BATTLE_TYPE);
     if (battleType === 0 && this.inBattle) {
-      this.inBattle = false;
-      this.battleSubState = "idle";
-      this.battleAction = "";
-      if (this.lastBattleType === 1) {
-        this.encountersWon++;
-      }
-      console.log("[AutoPlay] Battle ended.");
+      this._onBattleEnd();
+    }
+  }
+
+  /**
+   * Handle the battle→overworld transition cleanly.
+   * @private
+   */
+  _onBattleEnd() {
+    const wasWild = this.lastBattleType === 1;
+    this.inBattle = false;
+    this.battleSubState = "idle";
+    this.battleSubStateTicks = 0;
+    this.battleAction = "";
+    this.releaseAll();
+
+    if (wasWild) {
+      this.encountersWon++;
+    }
+
+    this._log(`Battle ended. Total wins: ${this.encountersWon}`, "battle");
+
+    // Short cooldown before resuming exploration
+    this.battleEndCooldown = 30; // ~0.5s at 60fps
+
+    // Reset speed hint to normal
+    if (this._speedHintCallback) {
+      this._speedHintCallback(1);
     }
   }
 
@@ -1335,7 +1565,7 @@ class Autoplay {
 
       return bestInfo;
     } catch (err) {
-      console.warn("[AutoPlay] selectBestMove error:", err.message);
+      this._log("selectBestMove error: " + err.message, "warn");
       return null;
     }
   }
