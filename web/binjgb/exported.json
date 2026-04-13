@@ -26,6 +26,8 @@
 "_joypad_delete",
 "_joypad_new",
 "_malloc",
+"_read_u16_be",
+"_read_u8",
 "_rewind_append",
 "_rewind_begin",
 "_rewind_delete",

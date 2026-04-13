@@ -32,6 +32,23 @@ const elements = {
   loadStateButton: document.querySelector('[data-action="load-state"]'),
   overlayMessage: document.getElementById("overlay-message"),
   pauseButton: document.getElementById("pause-button"),
+  autoplayButton: document.getElementById("autoplay-button"),
+  autoplayPanel: document.getElementById("autoplay-panel"),
+  autoplayState: document.getElementById("autoplay-state"),
+  autoplayLeadHp: document.getElementById("autoplay-lead-hp"),
+  autoplayLeadHpText: document.getElementById("autoplay-lead-hp-text"),
+  autoplayLeadName: document.querySelector("#autoplay-lead .pokemon-name"),
+  autoplayOppGroup: document.getElementById("autoplay-opponent-group"),
+  autoplayOppName: document.getElementById("autoplay-opp-name"),
+  autoplayOppHp: document.getElementById("autoplay-opp-hp"),
+  autoplayOppHpText: document.getElementById("autoplay-opp-hp-text"),
+  autoplayParty: document.getElementById("autoplay-party"),
+  autoplayMap: document.getElementById("autoplay-map"),
+  autoplayPos: document.getElementById("autoplay-pos"),
+  autoplayAction: document.getElementById("autoplay-action"),
+  autoplayEncounters: document.getElementById("autoplay-encounters"),
+  autoplayLog: document.getElementById("autoplay-log"),
+  speedButton: document.getElementById("speed-button"),
   runtimeStatus: document.getElementById("runtime-status"),
   saveLabel: document.getElementById("save-label"),
   screen: document.getElementById("screen"),
@@ -40,6 +57,8 @@ const elements = {
 };
 
 const app = {
+  autoplay: null,
+  autoplayUiTimerId: 0,
   emulator: null,
   module: null,
   persistTimerId: 0,
@@ -90,7 +109,9 @@ async function bootstrap() {
 function bindUi() {
   document.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => {
-      handleAction(button.dataset.action).catch((error) => handleError(error));
+      handleAction(button.dataset.action)
+        .catch((error) => handleError(error))
+        .finally(() => elements.screenFrame.focus({preventScroll: true}));
     });
   });
 
@@ -122,6 +143,15 @@ function bindUi() {
   window.addEventListener("pagehide", () => {
     flushSram().catch(() => {});
   });
+
+  // Speed control segmented buttons
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const speed = parseInt(btn.dataset.speed) || 0;
+      setSpeed(speed);
+      elements.screenFrame.focus({ preventScroll: true });
+    });
+  });
 }
 
 async function handleAction(action) {
@@ -142,6 +172,10 @@ async function handleAction(action) {
       break;
     case "fullscreen":
       await requestFullscreen(elements.screenFrame);
+      break;
+    case "autoplay":
+      ensureRuntime();
+      toggleAutoplay();
       break;
     case "save-state":
       ensureRuntime();
@@ -173,6 +207,10 @@ async function handleAction(action) {
           app.emulator.captureState(),
           "application/octet-stream");
       break;
+    case "speed":
+      ensureRuntime();
+      cycleSpeed();
+      break;
     default:
       throw new Error(`Unknown action: ${action}`);
   }
@@ -202,6 +240,141 @@ async function importBinary(file, kind) {
   }
 
   throw new Error(`Unsupported import type: ${kind}`);
+}
+
+/* ── AutoPlay Integration ──────────────────────────────── */
+
+/* ── Speed Control ─────────────────────────────────────── */
+
+const SPEED_PRESETS = [1, 2, 4, 0];
+
+function cycleSpeed() {
+  const current = app.emulator.speedMultiplier;
+  const idx = SPEED_PRESETS.indexOf(current);
+  const next = SPEED_PRESETS[(idx + 1) % SPEED_PRESETS.length];
+  setSpeed(next);
+}
+
+function setSpeed(multiplier) {
+  if (!app.emulator) return;
+
+  if (multiplier === 0) {
+    app.emulator.setSpeed(16);
+    syncSpeedButtons(16);
+  } else {
+    app.emulator.setSpeed(multiplier);
+    syncSpeedButtons(multiplier);
+  }
+}
+
+function syncSpeedButtons(speedOverride) {
+  const speed = speedOverride != null ? speedOverride : (app.emulator ? app.emulator.speedMultiplier : 1);
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    const val = parseInt(btn.dataset.speed) || 0;
+    const match = (val === 0 && speed >= 16) || (val === speed);
+    btn.classList.toggle('active', match);
+  });
+}
+
+/* ── AutoPlay ──────────────────────────────────────────── */
+
+function toggleAutoplay() {
+  if (!window.Autoplay) {
+    throw new Error("AutoPlay module not loaded.");
+  }
+
+  if (!app.autoplay) {
+    app.autoplay = new window.Autoplay(app.module, app.emulator.e);
+  }
+
+  app.autoplay.toggle();
+  syncAutoplayUi();
+
+  if (app.autoplay.active) {
+    elements.autoplayPanel.hidden = false;
+    app.autoplayUiTimerId = setInterval(updateAutoplayPanel, 250);
+  } else {
+    clearInterval(app.autoplayUiTimerId);
+    app.autoplayUiTimerId = 0;
+  }
+}
+
+function syncAutoplayUi() {
+  const active = app.autoplay && app.autoplay.active;
+  const btn = elements.autoplayButton;
+  btn.classList.toggle("active", !!active);
+  const label = btn.querySelector('.bar-btn-label');
+  if (label) label.textContent = active ? "AI ●" : "AI";
+}
+
+function updateAutoplayPanel() {
+  if (!app.autoplay || !app.autoplay.active) return;
+
+  const s = app.autoplay.getStatus();
+
+  // State badge
+  const stateEl = elements.autoplayState;
+  stateEl.textContent = s.state || "idle";
+  stateEl.className = "pill autoplay-pill";
+  if (s.state) stateEl.classList.add("state-" + s.state);
+
+  // Lead pokemon
+  if (s.pokemon) {
+    elements.autoplayLeadName.textContent = s.pokemon.name || "???";
+    const pct = s.pokemon.maxHp > 0 ? Math.round((s.pokemon.hp / s.pokemon.maxHp) * 100) : 0;
+    elements.autoplayLeadHp.style.width = pct + "%";
+    elements.autoplayLeadHp.className = "hp-bar" + (pct <= 20 ? " critical" : pct <= 50 ? " low" : "");
+    elements.autoplayLeadHpText.textContent =
+      `Lv${s.pokemon.level} ${s.pokemon.hp}/${s.pokemon.maxHp}`;
+  }
+
+  // Opponent
+  if (s.opponent && s.state === "battling") {
+    elements.autoplayOppGroup.hidden = false;
+    elements.autoplayOppName.textContent = s.opponent.name || "???";
+    const oPct = s.opponent.maxHp > 0 ? Math.round((s.opponent.hp / s.opponent.maxHp) * 100) : 0;
+    elements.autoplayOppHp.style.width = oPct + "%";
+    elements.autoplayOppHpText.textContent =
+      `Lv${s.opponent.level} ${s.opponent.hp}/${s.opponent.maxHp}`;
+  } else {
+    elements.autoplayOppGroup.hidden = true;
+  }
+
+  // Party dots
+  const dots = elements.autoplayParty.children;
+  if (s.party) {
+    for (let i = 0; i < 6; i++) {
+      const dot = dots[i];
+      if (i < s.party.length) {
+        const p = s.party[i];
+        const pct = p.maxHp > 0 ? p.hp / p.maxHp : 0;
+        dot.className = "party-dot" +
+          (p.hp <= 0 ? " fainted" : pct <= 0.2 ? " critical" : pct <= 0.5 ? " low" : "");
+      } else {
+        dot.className = "party-dot empty";
+      }
+    }
+  }
+
+  // Meta
+  elements.autoplayMap.textContent = s.map != null ? s.map : "—";
+  elements.autoplayPos.textContent =
+    s.position ? `(${s.position.x}, ${s.position.y})` : "—";
+  elements.autoplayAction.textContent = s.battleAction || s.state || "—";
+  elements.autoplayEncounters.textContent =
+    `${s.encountersWon || 0} won · ${s.encountersFled || 0} fled`;
+
+  updateAutoplayLog();
+}
+
+function updateAutoplayLog() {
+  if (!app.autoplay || !elements.autoplayLog) return;
+  const log = app.autoplay.getLog ? app.autoplay.getLog(Date.now() - 30000) : [];
+  const html = log.slice(-8).map(e => {
+    const ago = Math.floor((Date.now() - e.time) / 1000);
+    return `<div class="log-entry log-${e.type || 'info'}">${e.message} <span class="log-time">${ago}s ago</span></div>`;
+  }).join('');
+  elements.autoplayLog.innerHTML = html;
 }
 
 function startRuntime(initialSram) {
@@ -262,8 +435,15 @@ function refreshButtonState() {
 }
 
 function syncPauseButton() {
-  const paused = !app.emulator || app.emulator.isPaused;
-  elements.pauseButton.textContent = paused ? "Resume" : "Pause";
+  if (!app.emulator) return;
+  const btn = elements.pauseButton;
+  if (app.emulator.isPaused) {
+    btn.innerHTML = '<svg class="bar-icon" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21"/></svg>';
+    btn.setAttribute('aria-label', 'Resume');
+  } else {
+    btn.innerHTML = '<svg class="bar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+    btn.setAttribute('aria-label', 'Pause');
+  }
 }
 
 function setButtonsEnabled(enabled) {
@@ -483,6 +663,7 @@ class EmulatorRuntime {
     this.lastRafSec = 0;
     this.leftoverTicks = 0;
     this.rafToken = null;
+    this.speedMultiplier = 1;
 
     if (options.sram) {
       this.loadExtRam(options.sram);
@@ -523,7 +704,9 @@ class EmulatorRuntime {
     }
     this.lastRafSec = 0;
     this.leftoverTicks = 0;
-    this.audio.resume();
+    if (this.speedMultiplier <= 1) {
+      this.audio.resume();
+    }
     this.requestFrame();
     setStatus("Running");
   }
@@ -541,7 +724,7 @@ class EmulatorRuntime {
     this.requestFrame();
     const startSec = startMs / 1000;
     const deltaSec = Math.max(startSec - (this.lastRafSec || startSec), 0);
-    const deltaTicks = Math.min(deltaSec, MAX_UPDATE_SEC) * CPU_TICKS_PER_SECOND;
+    const deltaTicks = Math.min(deltaSec, MAX_UPDATE_SEC) * CPU_TICKS_PER_SECOND * this.speedMultiplier;
     const untilTicks = this.ticks + deltaTicks - this.leftoverTicks;
 
     this.runUntil(untilTicks);
@@ -627,6 +810,19 @@ class EmulatorRuntime {
       }
       return new Uint8Array(buffer).slice().buffer;
     });
+  }
+
+  setSpeed(multiplier) {
+    this.speedMultiplier = multiplier;
+    if (multiplier > 1) {
+      this.audio.pause();
+    } else if (!this.isPaused) {
+      this.audio.resume();
+    }
+  }
+
+  get speed() {
+    return this.speedMultiplier;
   }
 }
 
@@ -975,6 +1171,16 @@ class InputManager {
 
   onKey(event, isDown) {
     const handler = this.keyHandlers[event.code];
+    // Speed shortcuts (1-4 keys) — only on keydown, only when screen-frame is focused
+    if (isDown && !event.repeat && this.frameElement &&
+        document.activeElement === this.frameElement) {
+      const speedMap = { Digit1: 1, Digit2: 2, Digit3: 4, Digit4: 0 };
+      if (event.code in speedMap) {
+        setSpeed(speedMap[event.code]);
+        event.preventDefault();
+        return;
+      }
+    }
     if (!handler) {
       return;
     }
