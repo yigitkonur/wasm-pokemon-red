@@ -3,73 +3,105 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pokemon RGB Web Player</title>
+  <title>Pokemon RGB Web Player — Yiğit Konur</title>
   <link rel="stylesheet" href="player.css">
 </head>
 <body>
-  <main class="player-shell">
-    <section class="screen-panel">
-      <div class="screen-header">
-        <div class="title-block">
-          <p class="eyebrow">Pokemon RGB Web</p>
-          <h1>Single-player browser runtime</h1>
-        </div>
-        <div class="status-cluster">
-          <span id="runtime-status" class="pill" aria-live="polite">Loading bundle</span>
-          <span id="build-label" class="pill subtle">build</span>
-        </div>
+  <div class="page-shell">
+
+    <header class="site-header page-pad">
+      <div class="site-header__row">
+        <nav class="site-nav" aria-label="Primary">
+          <a class="site-nav__link" href="https://blog.yigitkonur.com/">Essays</a>
+          <a class="site-nav__link" href="https://blog.yigitkonur.com/research">Research</a>
+          <a class="site-nav__link" href="https://blog.yigitkonur.com/projects" aria-current="page">Projects</a>
+          <a class="site-nav__link" href="https://blog.yigitkonur.com/about">About</a>
+        </nav>
       </div>
+    </header>
 
-      <div class="screen-frame" id="screen-frame" tabindex="0">
-        <canvas id="screen" width="160" height="144" aria-label="Pokemon RGB display"></canvas>
-        <p id="overlay-message" class="overlay-message" aria-live="polite">
-          Tap, click, or press a key once to unlock audio.
-        </p>
+    <main class="site-main page-pad">
+      <div class="page-stack">
+
+        <!-- Header -->
+        <section>
+          <a class="back-link" href="https://blog.yigitkonur.com/projects">← Projects</a>
+          <h1 class="page-title">Pokemon RGB Web</h1>
+          <p class="section-subtitle">A single-player browser runtime for Pokemon Red, assembled from source and running via WebAssembly.</p>
+          <div class="status-cluster">
+            <span id="runtime-status" class="pill" aria-live="polite">Loading bundle</span>
+            <span id="build-label" class="pill subtle">build</span>
+          </div>
+        </section>
+
+        <!-- Player -->
+        <section class="player-section">
+          <div class="screen-frame" id="screen-frame" tabindex="0">
+            <canvas id="screen" width="160" height="144" aria-label="Pokemon RGB display"></canvas>
+            <p id="overlay-message" class="overlay-message" aria-live="polite">
+              Tap, click, or press a key once to unlock audio.
+            </p>
+          </div>
+          <p id="save-label" class="meta-line">Preparing local save storage...</p>
+          <p class="meta-line">Link cable battles and trades are disabled in this build.</p>
+        </section>
+
+        <!-- Controls -->
+        <section class="controls-section">
+          <p class="caps-label">Controls</p>
+          <div class="control-grid">
+            <button type="button" data-action="pause" id="pause-button">Pause</button>
+            <button type="button" data-action="reset">Reset</button>
+            <button type="button" data-action="fullscreen">Fullscreen</button>
+            <button type="button" data-action="save-state">Save State</button>
+            <button type="button" data-action="load-state">Load State</button>
+            <button type="button" data-action="import-save">Import Save</button>
+            <button type="button" data-action="export-save">Export Save</button>
+            <button type="button" data-action="import-state">Import State</button>
+            <button type="button" data-action="export-state">Export State</button>
+          </div>
+
+          <div class="touch-controls" aria-label="On-screen controls">
+            <div class="dpad">
+              <button type="button" class="touch-button up" data-input="up" aria-label="Up">Up</button>
+              <button type="button" class="touch-button left" data-input="left" aria-label="Left">Left</button>
+              <button type="button" class="touch-button right" data-input="right" aria-label="Right">Right</button>
+              <button type="button" class="touch-button down" data-input="down" aria-label="Down">Down</button>
+            </div>
+            <div class="touch-actions">
+              <button type="button" class="touch-button capsule" data-input="select">Select</button>
+              <button type="button" class="touch-button capsule" data-input="start">Start</button>
+              <button type="button" class="touch-button round" data-input="b">B</button>
+              <button type="button" class="touch-button round accent" data-input="a">A</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Keyboard Guide -->
+        <section class="keyboard-guide" aria-label="Keyboard guide">
+          <p class="caps-label">Keyboard guide</p>
+          <p class="keyboard-guide-copy">
+            Use <kbd>Arrow Keys</kbd> to move, <kbd>Space</kbd> or <kbd>Enter</kbd> for <span class="shortcut-label">A</span>,
+            <kbd>Shift</kbd> or <kbd>Z</kbd> for <span class="shortcut-label">B</span>, <kbd>Esc</kbd> for <span class="shortcut-label">Start</span>,
+            and <kbd>Tab</kbd> for <span class="shortcut-label">Select</span>. Clicking outside the player frame releases held keys.
+          </p>
+        </section>
+
+        <!-- Error Banner -->
+        <p id="error-banner" class="error-banner" hidden></p>
+
       </div>
+    </main>
 
-      <p id="save-label" class="meta-line">Preparing local save storage...</p>
-      <p class="meta-line">Link cable battles and trades are disabled in this build.</p>
-      <section class="shortcut-guide" aria-label="Keyboard guide">
-        <p class="shortcut-guide-title">Keyboard guide</p>
-        <p class="shortcut-guide-copy">
-          Use <kbd>Arrow Keys</kbd> to move, <kbd>Space</kbd> or <kbd>Enter</kbd> for <span class="shortcut-label">A</span>,
-          <kbd>Shift</kbd> or <kbd>Z</kbd> for <span class="shortcut-label">B</span>, <kbd>Esc</kbd> for <span class="shortcut-label">Start</span>,
-          and <kbd>Tab</kbd> for <span class="shortcut-label">Select</span>. Clicking outside the player frame releases held keys.
-        </p>
-      </section>
-      <p id="error-banner" class="error-banner" hidden></p>
-    </section>
-
-    <section class="controls-panel">
-      <div class="control-grid">
-        <button type="button" data-action="pause" id="pause-button">Pause</button>
-        <button type="button" data-action="reset">Reset</button>
-        <button type="button" data-action="fullscreen">Fullscreen</button>
-        <button type="button" data-action="save-state">Save State</button>
-        <button type="button" data-action="load-state">Load State</button>
-        <button type="button" data-action="import-save">Import Save</button>
-        <button type="button" data-action="export-save">Export Save</button>
-        <button type="button" data-action="import-state">Import State</button>
-        <button type="button" data-action="export-state">Export State</button>
+    <footer class="site-footer page-pad">
+      <div class="footer-row">
+        <a class="footer-link" href="https://x.com/yigitkonur" target="_blank" rel="noopener noreferrer">X</a>
+        <a class="footer-link" href="https://linkedin.com/in/yigitkonur" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        <a class="footer-link" href="https://github.com/yigitkonur" target="_blank" rel="noopener noreferrer">GitHub</a>
       </div>
+    </footer>
 
-      <div class="touch-controls" aria-label="On-screen controls">
-        <div class="dpad">
-          <button type="button" class="touch-button up" data-input="up" aria-label="Up">Up</button>
-          <button type="button" class="touch-button left" data-input="left" aria-label="Left">Left</button>
-          <button type="button" class="touch-button right" data-input="right" aria-label="Right">Right</button>
-          <button type="button" class="touch-button down" data-input="down" aria-label="Down">Down</button>
-        </div>
-
-        <div class="touch-actions">
-          <button type="button" class="touch-button capsule" data-input="select">Select</button>
-          <button type="button" class="touch-button capsule" data-input="start">Start</button>
-          <button type="button" class="touch-button round" data-input="b">B</button>
-          <button type="button" class="touch-button round accent" data-input="a">A</button>
-        </div>
-      </div>
-    </section>
-  </main>
+  </div>
 
   <input id="import-save-input" type="file" accept=".sav,application/octet-stream" hidden>
   <input id="import-state-input" type="file" accept=".state,.bin,application/octet-stream" hidden>
