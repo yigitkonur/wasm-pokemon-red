@@ -657,6 +657,10 @@ class EmulatorRuntime {
       throw new Error("The bundled ROM could not be started.");
     }
 
+    // Register joypad callback so the emulator reads button state
+    this.joypadBuffer = this.module._joypad_new();
+    this.module._emulator_set_default_joypad_callback(this.e, this.joypadBuffer);
+
     this.audio = new AudioManager(module, this.e, options.onAudioUnlocked);
     this.video = new VideoManager(module, this.e, options.canvas);
     this.input = new InputManager(module, this.e, options.touchButtons, elements.screenFrame);
@@ -676,6 +680,7 @@ class EmulatorRuntime {
     cancelAnimationFrame(this.rafToken);
     this.audio.destroy();
     this.input.destroy();
+    this.module._joypad_delete(this.joypadBuffer);
     this.module._emulator_delete(this.e);
     this.module._free(this.romDataPtr);
   }
