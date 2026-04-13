@@ -84,6 +84,9 @@
       this.onTurnStart = null;
       this.onTurnEnd = null;
       this.onChatUpdate = null;
+
+      // Auto-connect so spectators get live status/chat without joining
+      this._connect();
     }
 
     /** Store emulator reference for state capture/restore */
@@ -100,30 +103,36 @@
     async start() {
       this._intentionallyStopped = false;
       this.turn.joined = true;
-      this._connect();
-      // Wait for WS open (or timeout after 5s)
-      await new Promise(function (resolve) {
-        var self = this;
-        if (self.ws && self.ws.readyState === WebSocket.OPEN) { resolve(); return; }
-        var check = setInterval(function () {
-          if (self.ws && self.ws.readyState === WebSocket.OPEN) {
-            clearInterval(check); resolve();
-          }
-        }, 100);
-        setTimeout(function () { clearInterval(check); resolve(); }, 5000);
-      }.bind(this));
-      this._send("join", { id: this.me.id, nickname: this.me.nickname });
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        // WS already open (auto-connected as spectator) — send join directly
+        this._send("join", { id: this.me.id, nickname: this.me.nickname });
+      } else {
+        // Not yet connected — connect and wait; onopen will send join
+        this._connect();
+        await new Promise(function (resolve) {
+          var self = this;
+          if (self.ws && self.ws.readyState === WebSocket.OPEN) { resolve(); return; }
+          var check = setInterval(function () {
+            if (self.ws && self.ws.readyState === WebSocket.OPEN) {
+              clearInterval(check); resolve();
+            }
+          }, 100);
+          setTimeout(function () { clearInterval(check); resolve(); }, 5000);
+        }.bind(this));
+      }
     }
 
-    /** Leave queue and close connection */
+    /** Leave queue but stay connected as spectator */
     async stop() {
-      this._intentionallyStopped = true;
       this.turn.joined = false;
       this.turn.isMyTurn = false;
       this._stopStatePush();
       clearInterval(this._pingTimer);
+      this._pingTimer = null;
       if (this.ws) {
         this._send("leave", {});
+        // Reconnect as spectator: close triggers onclose → _connect() (not intentionally stopped)
+        this._intentionallyStopped = false;
         this.ws.close();
         this.ws = null;
       }

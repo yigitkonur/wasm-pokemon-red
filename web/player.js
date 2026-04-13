@@ -399,6 +399,13 @@ function initMultiplayer() {
   var mp = new window.Multiplayer();
   app.multiplayer = mp;
 
+  // Immediately wire up emulator (available since initMultiplayer is called after startRuntime)
+  if (app.emulator) mp.setEmulator(app.emulator);
+
+  // Show bar and chat for all visitors — spectators see live status without joining
+  if (elements.mpBar) elements.mpBar.hidden = false;
+  if (elements.chatPanel) elements.chatPanel.hidden = false;
+
   // Set nickname from saved value
   var nickInput = elements.mpNickname;
   if (nickInput) nickInput.value = mp.me.nickname;
@@ -420,8 +427,6 @@ function initMultiplayer() {
           await mp.start();
           elements.mpJoinBtn.textContent = "Leave Game";
           elements.mpJoinBtn.classList.add("joined");
-          if (elements.mpBar) elements.mpBar.hidden = false;
-          if (elements.chatPanel) elements.chatPanel.hidden = false;
           if (nickInput) nickInput.disabled = true;
         } catch (err) {
           console.error("[MP] join failed:", err);
@@ -434,8 +439,6 @@ function initMultiplayer() {
         await mp.stop();
         elements.mpJoinBtn.textContent = "Join Game";
         elements.mpJoinBtn.classList.remove("joined");
-        if (elements.mpBar) elements.mpBar.hidden = true;
-        if (elements.chatPanel) elements.chatPanel.hidden = true;
         if (nickInput) nickInput.disabled = false;
         var frame = elements.screenFrame;
         if (frame) {
@@ -492,6 +495,7 @@ function updateMultiplayerUI(s) {
     dot.className = "mp-dot";
     if (s.isMyTurn) dot.classList.add("playing");
     else if (s.joined) dot.classList.add("watching");
+    else dot.classList.add("watching"); // spectator: connected but not in queue
   }
 
   // Active label
@@ -506,7 +510,7 @@ function updateMultiplayerUI(s) {
     } else if (s.joined) {
       label.textContent = "Waiting for players...";
     } else {
-      label.textContent = "Connecting...";
+      label.textContent = "Watching live — click Join to play";
     }
   }
 
