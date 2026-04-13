@@ -41,6 +41,7 @@ let queue = [];
 let activePlayerId = null;
 let idleTimer = null;
 let turnStartedAt = null;
+let lastInputAt = null;
 
 // ── Broadcast helpers ───────────────────────────────────────────────────────
 function send(ws, type, payload) {
@@ -60,8 +61,8 @@ function broadcastAll(type, payload) {
 }
 
 function broadcastStatus() {
-  const ttlSec = activePlayerId && turnStartedAt
-    ? Math.max(0, TURN_TTL - Math.round((Date.now() - turnStartedAt) / 1000))
+  const ttlSec = activePlayerId && lastInputAt
+    ? Math.max(0, Math.ceil((IDLE_MS - (Date.now() - lastInputAt)) / 1000))
     : 0;
   const activeInfo = queue.find(p => p.id === activePlayerId);
   broadcastAll('status', {
@@ -91,6 +92,7 @@ function scheduleTurnTimeout() {
 async function grantTurn(player) {
   activePlayerId = player.id;
   turnStartedAt = Date.now();
+  lastInputAt = Date.now();
   scheduleTurnTimeout();
 
   // Set in Redis too (for persistence / crash recovery)
@@ -115,6 +117,7 @@ async function revokeAndAdvance(reason) {
   const prev = activePlayerId;
   activePlayerId = null;
   turnStartedAt = null;
+  lastInputAt = null;
 
   // Notify previous active player
   for (const [ws, info] of clients) {
@@ -189,6 +192,7 @@ function handleInput(ws) {
   if (!info || info.id !== activePlayerId) return;
   // Reset idle timer
   scheduleTurnTimeout();
+  lastInputAt = Date.now();
 }
 
 async function handleChat(ws, { text }) {
@@ -217,9 +221,9 @@ async function handleStatePush(ws, { state, sram }) {
   if (!info || info.id !== activePlayerId) return;
   if (!state) return;
 
-  // Relay to spectators immediately
-  for (const [clientWs, clientInfo] of clients) {
-    if (clientWs !== ws && clientInfo.joined) {
+  // Relay to all connected clients (including spectators)
+  for (const [clientWs] of clients) {
+    if (clientWs !== ws) {
       send(clientWs, 'game_state', { state, sram });
     }
   }
@@ -245,6 +249,16 @@ async function sendChatHistory(ws) {
   } catch (e) { console.warn('[redis] chat history:', e.message); }
 }
 
+async function sendInitialState(ws) {
+  try {
+    const [state, sram] = await redisPipeline([
+      ['GET', 'game:state'],
+      ['GET', 'game:sram'],
+    ]);
+    if (state) send(ws, 'game_state', { state, sram: sram || '' });
+  } catch (e) { console.warn('[redis] initial state:', e.message); }
+}
+
 // ── Express HTTP + WebSocket server ────────────────────────────────────────
 const app = express();
 app.use(cors());
@@ -265,6 +279,7 @@ wss.on('connection', (ws, req) => {
 
   // Send chat history on connect
   sendChatHistory(ws);
+  sendInitialState(ws);
   // Send current status
   broadcastStatus();
 
