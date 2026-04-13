@@ -1078,3 +1078,279 @@ input:focus-visible {
 .secondary-controls .control-grid {
   margin-top: 0.5rem;
 }
+
+/* ================================================================
+   Multiplayer — Status Bar, Chat, Join
+   ================================================================ */
+
+/* --- MP Status Bar --- */
+.mp-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #161616;
+  border: 1px solid #262626;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  gap: 8px;
+}
+
+.mp-bar__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mp-bar__info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.mp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #555;
+  flex-shrink: 0;
+}
+
+.mp-dot.watching { background: #f59e0b; }
+.mp-dot.playing  { background: #22c55e; animation: mp-pulse 1.5s ease-in-out infinite; }
+.mp-dot.waiting  { background: #3b82f6; }
+
+@keyframes mp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.mp-active-label {
+  color: #ccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mp-active-label strong {
+  color: #f5f5f5;
+}
+
+.mp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  background: #1f1f1f;
+  border: 1px solid #333;
+  border-radius: 10px;
+  color: #999;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.mp-timer {
+  color: #f59e0b;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  min-width: 2ch;
+}
+
+/* --- Chat Panel --- */
+.chat-panel {
+  background: #111;
+  border: 1px solid #222;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #222;
+}
+
+.chat-messages {
+  height: 220px;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  scroll-behavior: smooth;
+}
+
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-track { background: transparent; }
+.chat-messages::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+.chat-empty {
+  color: #555;
+  font-size: 0.82rem;
+  text-align: center;
+  padding: 24px 0;
+  margin: 0;
+}
+
+.chat-msg {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  padding: 3px 0;
+}
+
+.chat-msg__nick {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.chat-msg__nick.is-me { color: #f59e0b; }
+.chat-msg__nick.is-other { color: #60a5fa; }
+
+.chat-msg__text {
+  color: #ccc;
+  word-break: break-word;
+}
+
+.chat-msg__time {
+  color: #555;
+  font-size: 0.7rem;
+  margin-left: 6px;
+}
+
+.chat-msg.system {
+  color: #888;
+  font-style: italic;
+  font-size: 0.78rem;
+}
+
+.chat-input-row {
+  display: flex;
+  border-top: 1px solid #222;
+  background: #0f0f0f;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: #e5e5e5;
+  font-size: 0.85rem;
+  outline: none;
+  font-family: inherit;
+}
+
+.chat-input::placeholder { color: #555; }
+
+.chat-send-btn {
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  transition: color 0.15s;
+  display: flex;
+  align-items: center;
+}
+
+.chat-send-btn:hover { color: #f59e0b; }
+
+/* --- Join Section --- */
+.mp-join-section {
+  padding: 12px 0;
+}
+
+.mp-join-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mp-nick-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: #161616;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #e5e5e5;
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.mp-nick-input:focus { border-color: #f59e0b; }
+
+.mp-join-btn {
+  padding: 8px 16px !important;
+  background: #f59e0b !important;
+  color: #000 !important;
+  border: none !important;
+  border-radius: 6px !important;
+  font-weight: 600 !important;
+  font-size: 0.82rem !important;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.mp-join-btn:hover { background: #d97706 !important; }
+
+.mp-join-btn.joined {
+  background: #333 !important;
+  color: #ccc !important;
+}
+
+.mp-join-hint {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: #666;
+}
+
+/* --- Turn indicator on screen frame --- */
+.screen-frame.is-spectating {
+  border-color: #333 !important;
+}
+
+.screen-frame.is-spectating::after {
+  content: "SPECTATING";
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 0.65rem;
+  color: #888;
+  background: rgba(0,0,0,0.7);
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+}
+
+.screen-frame.is-playing::after {
+  content: "YOUR TURN";
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 0.65rem;
+  color: #22c55e;
+  background: rgba(0,0,0,0.7);
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  animation: mp-pulse 2s ease-in-out infinite;
+}
+
+/* --- Responsive --- */
+@media (max-width: 600px) {
+  .chat-messages { height: 160px; }
+  .mp-bar { flex-direction: column; gap: 4px; }
+  .mp-bar__info { justify-content: center; }
+  .mp-join-row { flex-direction: column; }
+}

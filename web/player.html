@@ -27,7 +27,7 @@
         <section>
           <a class="back-link" href="https://blog.yigitkonur.com/projects">← Projects</a>
           <h1 class="page-title">Pokemon RGB Web</h1>
-          <p class="section-subtitle">A single-player browser runtime for Pokemon Red, assembled from source and running via WebAssembly.</p>
+          <p class="section-subtitle">A shared browser arcade for Pokemon Red — one game, many trainers. Take turns, chat, and play together via WebAssembly.</p>
           <div class="status-cluster">
             <span id="runtime-status" class="pill" aria-live="polite">Loading bundle</span>
             <span id="build-label" class="pill subtle">build</span>
@@ -44,6 +44,19 @@
           </div>
           <p id="save-label" class="meta-line">Preparing local save storage...</p>
           <p class="meta-line">Link cable battles and trades are disabled in this build.</p>
+        </section>
+
+        <!-- Multiplayer Status -->
+        <section class="mp-bar" id="mp-bar" hidden>
+          <div class="mp-bar__status">
+            <span class="mp-dot" id="mp-dot"></span>
+            <span class="mp-active-label" id="mp-active-label">Connecting...</span>
+          </div>
+          <div class="mp-bar__info">
+            <span class="mp-badge" id="mp-viewers" title="Viewers">👁 0</span>
+            <span class="mp-badge" id="mp-queue" title="Queue">⏳ 0</span>
+            <span class="mp-timer" id="mp-timer" title="Turn time remaining"></span>
+          </div>
         </section>
 
         <!-- Player Bar — unified toolbar -->
@@ -179,6 +192,32 @@
           </div>
         </section>
 
+        <!-- Multiplayer Chat -->
+        <section class="chat-panel" id="chat-panel" hidden>
+          <div class="chat-header">
+            <p class="caps-label">💬 Live Chat</p>
+            <span class="mp-badge" id="chat-count">0</span>
+          </div>
+          <div class="chat-messages" id="chat-messages" role="log" aria-live="polite">
+            <p class="chat-empty">No messages yet. Say hello!</p>
+          </div>
+          <form class="chat-input-row" id="chat-form" autocomplete="off">
+            <input type="text" id="chat-input" class="chat-input" placeholder="Type a message..." maxlength="280" autocomplete="off">
+            <button type="submit" class="chat-send-btn" aria-label="Send">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </form>
+        </section>
+
+        <!-- Multiplayer Join / Nickname -->
+        <section class="mp-join-section" id="mp-join-section">
+          <div class="mp-join-row">
+            <input type="text" id="mp-nickname" class="mp-nick-input" placeholder="Your nickname..." maxlength="16">
+            <button type="button" id="mp-join-btn" class="bar-btn mp-join-btn">Join Game</button>
+          </div>
+          <p class="meta-line mp-join-hint">Join to take turns playing and chat with others.</p>
+        </section>
+
         <!-- Keyboard Guide -->
         <section class="keyboard-guide" aria-label="Keyboard guide">
           <p class="caps-label">Keyboard</p>
@@ -232,6 +271,7 @@
 
   <script src="assets/binjgb.js"></script>
   <script src="autoplay.js"></script>
+  <script src="multiplayer.js"></script>
   <script src="player.js"></script>
 </body>
 </html>

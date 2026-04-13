@@ -54,12 +54,27 @@ const elements = {
   screen: document.getElementById("screen"),
   screenFrame: document.getElementById("screen-frame"),
   touchButtons: Array.from(document.querySelectorAll("[data-input]")),
+  mpBar: document.getElementById("mp-bar"),
+  mpDot: document.getElementById("mp-dot"),
+  mpActiveLabel: document.getElementById("mp-active-label"),
+  mpViewers: document.getElementById("mp-viewers"),
+  mpQueue: document.getElementById("mp-queue"),
+  mpTimer: document.getElementById("mp-timer"),
+  chatPanel: document.getElementById("chat-panel"),
+  chatMessages: document.getElementById("chat-messages"),
+  chatForm: document.getElementById("chat-form"),
+  chatInput: document.getElementById("chat-input"),
+  chatCount: document.getElementById("chat-count"),
+  mpJoinBtn: document.getElementById("mp-join-btn"),
+  mpNickname: document.getElementById("mp-nickname"),
+  mpJoinSection: document.getElementById("mp-join-section"),
 };
 
 const app = {
   autoplay: null,
   autoplayUiTimerId: 0,
   emulator: null,
+  multiplayer: null,
   module: null,
   persistTimerId: 0,
   romBaseName: "pokered",
@@ -377,6 +392,162 @@ function updateAutoplayLog() {
   elements.autoplayLog.innerHTML = html;
 }
 
+/* ---- Multiplayer ---- */
+function initMultiplayer() {
+  if (!window.Multiplayer) return;
+
+  var mp = new window.Multiplayer();
+  app.multiplayer = mp;
+
+  // Set nickname from saved value
+  var nickInput = elements.mpNickname;
+  if (nickInput) nickInput.value = mp.me.nickname;
+
+  // Show join section
+  if (elements.mpJoinSection) elements.mpJoinSection.hidden = false;
+
+  // Join button
+  if (elements.mpJoinBtn) {
+    elements.mpJoinBtn.addEventListener("click", async function () {
+      if (!mp.turn.joined) {
+        // Update nickname before joining
+        if (nickInput && nickInput.value.trim()) {
+          mp.setNickname(nickInput.value.trim());
+        }
+        // Connect emulator
+        if (app.emulator) mp.setEmulator(app.emulator);
+        await mp.start();
+        elements.mpJoinBtn.textContent = "Leave Game";
+        elements.mpJoinBtn.classList.add("joined");
+        if (elements.mpBar) elements.mpBar.hidden = false;
+        if (elements.chatPanel) elements.chatPanel.hidden = false;
+        if (nickInput) nickInput.disabled = true;
+      } else {
+        await mp.stop();
+        elements.mpJoinBtn.textContent = "Join Game";
+        elements.mpJoinBtn.classList.remove("joined");
+        if (elements.mpBar) elements.mpBar.hidden = true;
+        if (elements.chatPanel) elements.chatPanel.hidden = true;
+        if (nickInput) nickInput.disabled = false;
+        var frame = elements.screenFrame;
+        if (frame) {
+          frame.classList.remove("is-spectating", "is-playing");
+        }
+      }
+    });
+  }
+
+  // Chat form submit
+  if (elements.chatForm) {
+    elements.chatForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var input = elements.chatInput;
+      if (!input || !input.value.trim()) return;
+      mp.sendChat(input.value.trim());
+      input.value = "";
+    });
+  }
+
+  // Status change callback
+  mp.onStatusChange = function (s) {
+    updateMultiplayerUI(s);
+  };
+
+  // Turn callbacks
+  mp.onTurnStart = function () {
+    var frame = elements.screenFrame;
+    if (frame) {
+      frame.classList.remove("is-spectating");
+      frame.classList.add("is-playing");
+      frame.focus({preventScroll: true});
+    }
+  };
+
+  mp.onTurnEnd = function () {
+    var frame = elements.screenFrame;
+    if (frame) {
+      frame.classList.remove("is-playing");
+      frame.classList.add("is-spectating");
+    }
+  };
+
+  // Chat update callback
+  mp.onChatUpdate = function (messages) {
+    renderChatMessages(messages);
+  };
+}
+
+function updateMultiplayerUI(s) {
+  // Status dot
+  var dot = elements.mpDot;
+  if (dot) {
+    dot.className = "mp-dot";
+    if (s.isMyTurn) dot.classList.add("playing");
+    else if (s.joined) dot.classList.add("watching");
+  }
+
+  // Active label
+  var label = elements.mpActiveLabel;
+  if (label) {
+    if (s.activeName) {
+      if (s.isMyTurn) {
+        label.innerHTML = "<strong>Your turn!</strong> Play now";
+      } else {
+        label.innerHTML = "<strong>" + escapeHtml(s.activeName) + "</strong> is playing";
+      }
+    } else if (s.joined) {
+      label.textContent = "Waiting for players...";
+    } else {
+      label.textContent = "Connecting...";
+    }
+  }
+
+  // Badges
+  if (elements.mpViewers) elements.mpViewers.textContent = "👁 " + s.viewers;
+  if (elements.mpQueue) elements.mpQueue.textContent = "⏳ " + s.queueLen;
+
+  // Timer
+  if (elements.mpTimer) {
+    elements.mpTimer.textContent = s.turnTTL > 0 ? s.turnTTL + "s" : "";
+  }
+}
+
+function renderChatMessages(messages) {
+  var container = elements.chatMessages;
+  if (!container) return;
+
+  if (!messages || messages.length === 0) {
+    container.innerHTML = '<p class="chat-empty">No messages yet. Say hello!</p>';
+    return;
+  }
+
+  var myId = app.multiplayer ? app.multiplayer.me.id : "";
+  var html = "";
+  for (var i = 0; i < messages.length; i++) {
+    var m = messages[i];
+    var isMe = m.pid === myId;
+    var timeStr = new Date(m.ts).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+    html += '<div class="chat-msg">';
+    html += '<span class="chat-msg__nick ' + (isMe ? "is-me" : "is-other") + '">' + escapeHtml(m.nick) + ':</span>';
+    html += '<span class="chat-msg__text">' + escapeHtml(m.text) + '</span>';
+    html += '<span class="chat-msg__time">' + timeStr + '</span>';
+    html += '</div>';
+  }
+  container.innerHTML = html;
+
+  // Auto-scroll to bottom
+  container.scrollTop = container.scrollHeight;
+
+  // Update count
+  if (elements.chatCount) elements.chatCount.textContent = messages.length;
+}
+
+function escapeHtml(str) {
+  var div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 function startRuntime(initialSram) {
   if (app.emulator) {
     app.emulator.destroy();
@@ -395,6 +566,7 @@ function startRuntime(initialSram) {
   syncPauseButton();
   refreshButtonState();
   setStatus("Running");
+  initMultiplayer();
 }
 
 function scheduleSramPersist() {
@@ -1176,6 +1348,11 @@ class InputManager {
 
   onKey(event, isDown) {
     const handler = this.keyHandlers[event.code];
+    // Multiplayer: block input if not our turn
+    if (app.multiplayer && app.multiplayer.turn.joined && !app.multiplayer.turn.isMyTurn) {
+      if (handler) event.preventDefault();
+      return;
+    }
     // Speed shortcuts (1-4 keys) — only on keydown, only when screen-frame is focused
     if (isDown && !event.repeat && this.frameElement &&
         document.activeElement === this.frameElement) {
@@ -1200,6 +1377,10 @@ class InputManager {
       this.activeKeyCodes.delete(event.code);
     }
     event.preventDefault();
+    // Multiplayer: record input to refresh turn timer
+    if (isDown && app.multiplayer && app.multiplayer.turn.isMyTurn) {
+      app.multiplayer.recordInput();
+    }
   }
 
   releaseActiveKeys() {
