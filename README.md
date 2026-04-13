@@ -1,91 +1,129 @@
 # wasm-pokemon-red
 
-`wasm-pokemon-red` is a GitHub-hosted browser distribution of the `pokemon-rgb` source tree.
+> How I got Pokémon Red running in a browser using WebAssembly — from Game Boy assembly to a static site.
 
-The local repository still contains the full `pokemon-rgb` Game Boy Color ROM sources and build graph. The published repository identity is separated from the ROM project identity so the deployed site can be treated as a web runtime product instead of a generic source mirror.
+## The idea
 
-The repository produces two materially different outputs from the same source base:
+What if you could play Pokémon Red in a browser tab? No downloads, no extensions, no emulator apps — just open a URL and you're in Pallet Town. That's what this project does. It takes the actual disassembled Game Boy source code, compiles the ROM from scratch, wraps a C emulator in WebAssembly, and serves the whole thing as a static site on GitHub Pages. No backend. No cloud. Just HTML, JS, WASM, and a `.gbc` file.
 
-- native ROM artifacts assembled by `rgbds`
-- a GitHub Pages-compatible WebAssembly bundle that ships `pokered.gbc`, `binjgb.js`, `binjgb.wasm`, and a static HTML/CSS/JS shell
+Here's how I got there, step by step.
 
-This README is intentionally scoped to the browser publication path and the files that control it.
+---
 
-## Relevant Files
+## Step 1: Get the ROM source
 
-- `Makefile`
-  The authoritative build graph for both the ROM and the web bundle. The Pages entrypoint is emitted here.
-- `.github/workflows/main.yml`
-  CI plus GitHub Pages deployment. The `web` job builds `dist/web`; the `deploy` job publishes the Pages artifact on pushes to `main`.
-- `web/player.html`
-  Static document shell for the emulator surface. This file is copied to both `dist/web/index.html` and `dist/web/player.html`.
-- `web/player.css`
-  Responsive layout, canvas framing, control surface styling, and touch control presentation.
-- `web/player.js`
-  Browser runtime orchestration: ROM fetch, Emscripten module bootstrap, emulator lifecycle, IndexedDB persistence, import/export, keyboard/touch/gamepad handling, and fullscreen/audio behavior.
-- `web/binjgb/exported.json`
-  Overlay export list for the staged `binjgb` Emscripten build. This repo extends upstream exports with state APIs plus the runtime memory functions required by the JS host.
-- `web/binjgb/wrapper.c`
-  Overlay Emscripten wrapper used during the staged `binjgb` build. This is where browser-facing save-state hooks are injected without mutating the vendored submodule.
-- `third_party/binjgb`
-  Pinned emulator runtime source. The repo never edits this submodule in place; it stages an archive copy and patches that copy during the web build.
-- `dist/web/`
-  Final static site root. This directory is what GitHub Pages receives.
+The first thing you need is the game itself. But we're not downloading a pre-built ROM from some sketchy corner of the internet — we're building it from source.
 
-## Build Topology
+This repo contains the full `pokemon-rgb` source tree: the actual disassembled Game Boy Color assembly that the community has painstakingly reverse-engineered. Every route, every Pokémon cry, every text box — it's all here in `.asm` files. The compilation pipeline is `rgbds`, the standard Game Boy assembler toolchain:
 
-### 1. ROM assembly
+```
+rgbasm  →  rgblink  →  rgbfix  →  pokered.gbc
+```
 
-The Game Boy ROM is still the primary build artifact.
+`make pokered.gbc` runs that pipeline and spits out a real, honest-to-god Game Boy ROM. You could flash it to a cart and play it on original hardware. This is important because it means the browser version plays the exact same game as the native build — we never transpile or recompile gameplay logic into JavaScript.
 
-`make pokered.gbc` performs the normal `rgbasm` -> `rgblink` -> `rgbfix` pipeline. No browser-specific preprocessing happens inside the ROM build. The web port consumes the compiled ROM as an opaque binary payload.
+There's a nice side effect here: since the ROM is deterministic, we can SHA-hash it and use that hash to namespace save data. More on that later.
 
-That decision is important because it keeps the browser target operationally identical to local/native builds:
+---
 
-- ROM correctness remains owned by the existing assembly toolchain.
-- The browser layer never recompiles or transforms gameplay logic into JavaScript.
-- SHA-based save namespacing can be derived directly from the emitted `.gbc`.
+## Step 2: Pick an emulator
 
-### 2. Emulator staging
+Okay, so we have a ROM. Now we need something that can run it in a browser. We need a Game Boy emulator that:
 
-`make web` does not compile the vendored `third_party/binjgb` checkout in place.
+1. Is written in C (so Emscripten can compile it)
+2. Is small and well-structured (so we're not dragging in a massive dependency)
+3. Actually works
 
-Instead, the build graph creates `web/.build/binjgb`, archives the pinned submodule into that directory, and applies two repository-local overlays:
+[binjgb](https://github.com/nicknassar/binjgb) checks all three boxes. It's a clean, minimal Game Boy emulator written in C by Ben Smith. It's designed to be embeddable, and — critically — it compiles with Emscripten without requiring a complete rewrite of its I/O layer.
 
-- `web/binjgb/exported.json`
-- `web/binjgb/wrapper.c`
+We vendor it as a git submodule at `third_party/binjgb`. But here's the first gotcha: we can't just compile it in place.
 
-The staged copy is also patched for current toolchains:
+---
 
-- `cmake_minimum_required(VERSION 2.8)` is raised to `3.5` to survive current CMake behavior
-- `HEAP8` and `HEAPU8` are exported from the Emscripten runtime so the browser host can construct typed-array views over wasm memory
+## Step 3: Stage and patch the emulator
 
-This is deliberately done in the staged build tree instead of the submodule so upstream pinning remains clean and auditable.
+This is where things get interesting. The vendored `third_party/binjgb` is a pinned submodule. If we start editing files inside it, we lose the ability to cleanly track upstream changes. Every `git status` becomes a mess, every submodule update becomes a merge conflict. So we don't touch it.
 
-### 3. Emscripten compilation
+Instead, the build creates a **staged copy** at `web/.build/binjgb` — an archive of the submodule — and applies our patches there. Think of it as "fork at build time, not at clone time."
 
-The staged emulator is compiled with Emscripten into:
+We overlay two files from `web/binjgb/`:
 
-- `dist/web/assets/binjgb.js`
-- `dist/web/assets/binjgb.wasm`
+- **`exported.json`** — the list of C functions we want Emscripten to expose to JavaScript. This includes the emulator lifecycle functions (`_emulator_new_simple`, `_emulator_run_until_f64`, `_emulator_delete`), memory allocation (`_malloc`, `_free`), framebuffer and audio accessors, and the save-state hooks we need for persistence.
 
-The browser host relies on a specific exported surface:
+- **`wrapper.c`** — a C wrapper that provides the browser-facing API surface. This is where save-state read/write hooks get injected. It keeps the original MIT license from binjgb and adds our glue code on top.
 
-- allocation and release: `_malloc`, `_free`
-- ROM boot and main loop: `_emulator_new_simple`, `_emulator_run_until_f64`, `_emulator_delete`
-- framebuffer/audio accessors
-- SRAM read/write hooks
-- save-state read/write hooks
-- file-data helpers for transport buffers
-- heap views for direct typed-array access
+We also patch the staged copy directly for two gotchas that took me a minute to figure out:
 
-If any of those exports disappear, `web/player.js` will fail early during bootstrap rather than silently misbehave.
+1. **CMake minimum version**: binjgb's `CMakeLists.txt` declares `cmake_minimum_required(VERSION 2.8)`. Modern CMake yells about this and can change behavior. We bump it to `3.5`.
 
-### 4. Static site assembly
+2. **`HEAP8` / `HEAPU8` exports**: the JavaScript host needs to create typed-array views over WebAssembly linear memory to shuttle ROM bytes and save data around. Emscripten doesn't export these by default anymore — you have to explicitly ask for them in the build flags. If you forget this, everything compiles fine but the JS host silently gets `undefined` when it tries to access wasm memory. Fun times.
 
-The final site layout is assembled into `dist/web/`:
+The beauty of this approach is that `third_party/binjgb` stays pristine. You can `git submodule update` anytime and our patches just re-apply during the next `make web`.
 
-```text
+---
+
+## Step 4: Compile to WebAssembly
+
+Now we point Emscripten at the staged, patched emulator and let it do its thing. The output is two files:
+
+- `binjgb.js` — the Emscripten runtime glue
+- `binjgb.wasm` — the compiled emulator
+
+The `exported.json` overlay controls what's visible to JavaScript. Here's a taste of what gets exported:
+
+```json
+[
+  "_emulator_new_simple",
+  "_emulator_run_until_f64",
+  "_emulator_delete",
+  "_emulator_read_state",
+  "_emulator_write_state",
+  "_emulator_read_ext_ram",
+  "_emulator_write_ext_ram",
+  "_get_frame_buffer_ptr",
+  "_get_audio_buffer_ptr",
+  "_malloc",
+  "_free"
+]
+```
+
+Each of those becomes a callable function on the Emscripten module object in JavaScript. The exported surface includes ROM boot, the frame loop, audio/video buffer accessors, SRAM read/write, save-state serialization, and the memory management functions that let JS allocate into the wasm heap.
+
+If any export goes missing (say, after an upstream binjgb update changes a function signature), `player.js` will fail loudly at bootstrap rather than silently breaking mid-game. That's intentional — fail fast beats corrupt save data every time.
+
+---
+
+## Step 5: Build the browser shell
+
+The emulator is compiled, but wasm doesn't know how to render to a `<canvas>`, handle keyboard input, or persist save data. That's the job of the browser shell: `player.html`, `player.js`, and `player.css`.
+
+**`player.js`** is the real workhorse — about 900 lines of orchestration code. Here's the boot sequence:
+
+1. Fetch `assets/version.json` (build metadata)
+2. Derive a storage namespace from the ROM's SHA hash
+3. Open an IndexedDB database
+4. Fetch `assets/pokered.gbc`
+5. Instantiate the Emscripten module via `window.Binjgb()`
+6. Check IndexedDB for existing SRAM and save-state data
+7. Allocate ROM bytes into wasm linear memory
+8. Create the emulator instance
+9. Kick off the frame loop and enable input
+
+The persistence model deserves a callout. SRAM (your in-game save file) and one manual save-state slot are both stored in IndexedDB, namespaced by the ROM's SHA hash. This means if you rebuild the ROM with code changes, your old saves won't silently load into an incompatible binary — they're keyed to the exact build that created them. It's a small thing, but it prevents the kind of "my save is corrupted and I don't know why" bug that's miserable to debug.
+
+Input handling covers three paths: keyboard mapping (arrow keys + Z/X/Enter/Backspace for the Game Boy buttons), on-screen touch controls for mobile, and the Gamepad API for controllers. The canvas uses WebGL when available, and audio unlocks on the first user gesture (thanks, autoplay policies).
+
+**`player.html`** is the static document shell — just a canvas, some control buttons, and the script/style includes. It gets copied to both `index.html` (the GitHub Pages root) and `player.html` (a stable deep-link for iframes or embeds).
+
+**`player.css`** handles responsive layout, canvas framing, and the touch control surface. Nothing exotic — just CSS doing CSS things.
+
+---
+
+## Step 6: Bundle and deploy
+
+The `Makefile` assembles everything into `dist/web/`:
+
+```
 dist/web/
   index.html
   player.html
@@ -99,136 +137,108 @@ dist/web/
     version.json
 ```
 
-Two HTML entrypoints are emitted intentionally:
+That's the entire site. No bundler, no webpack, no node_modules. Just files.
 
-- `index.html` is the canonical GitHub Pages root document
-- `player.html` remains a stable deep link for iframe or direct embed use
+Deployment is handled by GitHub Actions (`.github/workflows/main.yml`). On every push to `main`:
 
-The HTML shell uses relative URLs only, so the site is valid both at `/` and under a GitHub Pages project-site prefix such as `/pokemon-rgb/`.
-
-## Browser Runtime Contract
-
-The browser runtime in `web/player.js` is a thin host around the wasm emulator, not an emulator rewrite.
-
-Boot sequence:
-
-1. Load `assets/version.json`
-2. Derive a storage namespace from `saveKey` or the ROM SHA
-3. Open IndexedDB
-4. Fetch `assets/pokered.gbc`
-5. Instantiate `window.Binjgb()`
-6. Load persisted SRAM/state metadata
-7. Allocate ROM bytes into wasm memory
-8. Create the emulator instance
-9. Start the frame loop and enable the control surface
-
-Persistence model:
-
-- SRAM is stored in IndexedDB
-- one manual save-state slot is stored in IndexedDB
-- persistence is namespaced by ROM SHA to prevent silent state reuse across incompatible builds
-
-Input model:
-
-- keyboard
-- touch controls
-- Gamepad API
-
-Runtime model:
-
-- WebGL-backed canvas presentation when available
-- browser audio unlock on first user gesture
-- no backend
-- no cloud sync
-- no multiplayer transport
-
-The runtime is intentionally single-player only. Link cable battles and trades are out of scope for this web target.
-
-## GitHub Pages Publication
-
-Publication is handled by `.github/workflows/main.yml`.
-
-Behavior on `push` to `main`:
-
-1. Checkout the repository with submodules
-2. Install `rgbds`
-3. Install and activate `emsdk` `5.0.5`
+1. Check out the repo with submodules
+2. Build and install `rgbds` from source
+3. Install and activate Emscripten SDK (`emsdk 5.0.5`)
 4. Run `make web`
-5. Upload `dist/web` as a normal workflow artifact
-6. Upload the same directory as the GitHub Pages artifact
-7. Deploy that artifact with `actions/deploy-pages@v5`
+5. Upload `dist/web/` as a GitHub Pages artifact
+6. Deploy via `actions/deploy-pages@v5`
 
-The workflow is pinned to explicit Pages actions:
+The HTML shell uses only relative URLs, so it works both at the repository root (`/`) and under a GitHub Pages project-site prefix like `/wasm-pokemon-red/`. The result is a fully static, CDN-friendly site with zero server-side requirements.
 
-- `actions/configure-pages@v6`
-- `actions/upload-pages-artifact@v5`
-- `actions/deploy-pages@v5`
+---
 
-For any GitHub project-site deployment, the public URL shape is:
+## Playing it
 
-`https://<owner>.github.io/<repo>/`
+**[▶ Play it live](https://yigitkonur.github.io/wasm-pokemon-red/)**
 
-For a repository named `wasm-pokemon-red`, that becomes:
+Once the page loads, you're in. Controls:
 
-`https://<owner>.github.io/wasm-pokemon-red/`
+| Action | Keyboard | Gamepad |
+|--------|----------|---------|
+| D-pad | Arrow keys | D-pad / Left stick |
+| A | Z | A button |
+| B | X | B button |
+| Start | Enter | Start |
+| Select | Backspace | Select |
 
-The site root resolves to `dist/web/index.html`, which means the published URL opens the emulator directly instead of requiring `/player.html`.
+On mobile, use the on-screen touch controls.
 
-## Local Bring-Up
+Your game saves automatically to IndexedDB — close the tab, come back later, and your progress is still there. There's also a manual save-state slot you can use for quick saves. Save data is scoped to the specific ROM build, so different builds won't clobber each other's saves.
 
-### Native prerequisites
+---
 
-- `rgbds`
-- `make`
+## Local development
+
+Want to build this yourself? Here's the full setup.
+
+### Prerequisites
+
 - `git`
+- `make`
+- `rgbds` (the Game Boy assembler toolchain — [install guide](https://rgbds.gbdev.io/install/))
+- Emscripten SDK (`emsdk 5.0.5` or compatible)
 
-### Web prerequisites
-
-- initialized submodules
-- Emscripten `5.0.5` or a compatible toolchain that provides `emcmake`
-
-Example:
+### Build steps
 
 ```bash
-git submodule update --init --recursive
+# Clone with submodules
+git clone --recursive https://github.com/yigitkonur/wasm-pokemon-red.git
+cd wasm-pokemon-red
+
+# Set up Emscripten (if you don't already have it)
 git clone https://github.com/emscripten-core/emsdk
 cd emsdk
 ./emsdk install 5.0.5
 ./emsdk activate 5.0.5
 source ./emsdk_env.sh
 export EMSCRIPTEN_CMAKE="$PWD/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
-cd ../pokemon-rgb
+cd ..
+
+# Build the web bundle
 make web binjgb_emscripten_cmake="$EMSCRIPTEN_CMAKE"
+
+# Serve it locally
 python3 -m http.server 8000 --directory dist/web
 ```
 
-Open:
+Then open `http://127.0.0.1:8000/` and you should see the game boot.
 
-- `http://127.0.0.1:8000/`
-- or `http://127.0.0.1:8000/player.html`
+If you just want the ROM without the browser stuff, `make pokered.gbc` is all you need (just rgbds + make, no Emscripten required).
 
-## Technical Constraints
-
-- The web bundle ships a compiled `pokered.gbc` inside `dist/web/assets/`.
-- The browser port is not a source-to-wasm conversion of the assembly code; it is ROM execution inside a wasm emulator.
-- Save compatibility is ROM-hash scoped, not branch-name scoped.
-- The site is static and CDN-friendly. There is no application server requirement.
-- Deployment correctness depends on the staged `binjgb` overlay remaining synchronized with the expectations encoded in `web/player.js`.
-
-## Verification Surface
-
-Useful validation commands:
+### Quick validation
 
 ```bash
+# Check the workflow YAML parses
 ruby -e "require 'yaml'; YAML.load_file('.github/workflows/main.yml')"
+
+# Check player.js for syntax errors
 node --check web/player.js
+
+# Full web build
 make web binjgb_emscripten_cmake="$EMSCRIPTEN_CMAKE"
 ```
 
-For browser-level verification, serve `dist/web/` locally and confirm all of the following:
+---
 
-- root path `/` boots the emulator
-- `player.html` remains a valid secondary entrypoint
-- the canvas renders actual game frames
-- IndexedDB persistence survives reloads
-- save-state export/import remains functional
+## Technical constraints
+
+A few things this project deliberately does **not** do:
+
+- **No multiplayer.** Link cable battles and trades require two Game Boy instances communicating over a serial protocol. We'd need a signaling server, WebRTC or WebSocket transport, and cycle-accurate synchronization. It's a genuinely hard problem and it's out of scope.
+
+- **No cloud sync.** Save data lives in your browser's IndexedDB. Clear your browser data and it's gone. There's no account system, no backend, no sync service.
+
+- **No source-to-wasm compilation.** We're not transpiling Game Boy assembly into WebAssembly. The `.asm` files compile into a `.gbc` ROM through the normal rgbds toolchain, and that ROM runs inside a wasm-compiled emulator. The browser never sees or recompiles gameplay logic.
+
+- **Save compatibility is ROM-hash scoped.** If you change the source and rebuild, your old save data won't load automatically. This is a feature, not a bug — it prevents corrupted saves from binary-incompatible ROMs.
+
+- **The staged overlay must stay in sync with `player.js`.** If `exported.json` or `wrapper.c` drift from what the JavaScript host expects, things break. The emulator will fail at bootstrap with missing exports rather than silently misbehaving, so at least failures are loud.
+
+---
+
+*Built with [rgbds](https://rgbds.gbdev.io/), [binjgb](https://github.com/nicknassar/binjgb), [Emscripten](https://emscripten.org/), and a mass of caffeine.*
