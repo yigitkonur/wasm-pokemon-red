@@ -53,6 +53,7 @@
             <button type="button" tabindex="-1" data-action="pause" id="pause-button">Pause</button>
             <button type="button" tabindex="-1" data-action="reset">Reset</button>
             <button type="button" tabindex="-1" data-action="fullscreen">Fullscreen</button>
+            <button type="button" tabindex="-1" data-action="autoplay" id="autoplay-button" class="autoplay-toggle">🤖 AutoPlay</button>
             <button type="button" tabindex="-1" data-action="save-state">Save State</button>
             <button type="button" tabindex="-1" data-action="load-state">Load State</button>
             <button type="button" tabindex="-1" data-action="import-save">Import Save</button>
@@ -73,6 +74,69 @@
               <button type="button" class="touch-button capsule" data-input="start">Start</button>
               <button type="button" class="touch-button round" data-input="b">B</button>
               <button type="button" class="touch-button round accent" data-input="a">A</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- AutoPlay Panel -->
+        <section id="autoplay-panel" class="autoplay-panel" hidden>
+          <div class="autoplay-header">
+            <p class="caps-label">🤖 AutoPlay</p>
+            <span id="autoplay-state" class="pill autoplay-pill">Idle</span>
+          </div>
+
+          <div class="autoplay-stats">
+            <div class="autoplay-stat-group">
+              <p class="autoplay-stat-label">Lead Pokémon</p>
+              <div class="autoplay-pokemon" id="autoplay-lead">
+                <span class="pokemon-name">—</span>
+                <div class="hp-bar-wrap">
+                  <div class="hp-bar" id="autoplay-lead-hp" style="width: 100%"></div>
+                </div>
+                <span class="hp-text" id="autoplay-lead-hp-text">—</span>
+              </div>
+            </div>
+
+            <div class="autoplay-stat-group autoplay-opponent" id="autoplay-opponent-group" hidden>
+              <p class="autoplay-stat-label">Opponent</p>
+              <div class="autoplay-pokemon">
+                <span class="pokemon-name" id="autoplay-opp-name">—</span>
+                <div class="hp-bar-wrap">
+                  <div class="hp-bar opponent" id="autoplay-opp-hp" style="width: 100%"></div>
+                </div>
+                <span class="hp-text" id="autoplay-opp-hp-text">—</span>
+              </div>
+            </div>
+
+            <div class="autoplay-stat-group">
+              <p class="autoplay-stat-label">Party</p>
+              <div class="party-slots" id="autoplay-party">
+                <span class="party-dot empty"></span>
+                <span class="party-dot empty"></span>
+                <span class="party-dot empty"></span>
+                <span class="party-dot empty"></span>
+                <span class="party-dot empty"></span>
+                <span class="party-dot empty"></span>
+              </div>
+            </div>
+
+            <div class="autoplay-meta">
+              <div class="meta-item">
+                <span class="meta-key">Map</span>
+                <span class="meta-val" id="autoplay-map">—</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-key">Position</span>
+                <span class="meta-val" id="autoplay-pos">—</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-key">Action</span>
+                <span class="meta-val" id="autoplay-action">—</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-key">Encounters</span>
+                <span class="meta-val" id="autoplay-encounters">0 won · 0 fled</span>
+              </div>
             </div>
           </div>
         </section>
@@ -125,6 +189,7 @@
   <input id="import-state-input" type="file" accept=".state,.bin,application/octet-stream" hidden>
 
   <script src="assets/binjgb.js"></script>
+  <script src="autoplay.js"></script>
   <script src="player.js"></script>
 </body>
 </html>
