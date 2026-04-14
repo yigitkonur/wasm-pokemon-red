@@ -264,12 +264,23 @@ a:hover {
 /* ── Page Title & Subtitle ───────────────────────────────── */
 
 .page-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
   margin: 0.25rem 0 0;
   font-size: clamp(2.5rem, 2rem + 2vw, 3rem);
   font-weight: 600;
   letter-spacing: -0.05em;
   line-height: 1.1;
   color: var(--color-text-primary);
+}
+
+.page-title-icon {
+  flex-shrink: 0;
+  width: 0.8em;
+  height: 0.8em;
+  opacity: 0.85;
+  margin-top: 0.05em;
 }
 
 .section-subtitle {
