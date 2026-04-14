@@ -71,19 +71,28 @@
       this.me = new Identity();
       this.emulator = null;
       this.turn = { joined: false, isMyTurn: false };
-      this.status = { activeId: null, activeName: null, queueLen: 0, viewers: 0, turnTTL: 0 };
+      this.status = { activeId: null, activeName: null, queueLen: 0, viewers: 0, turnTTL: 0, activeMode: 'idle', aiHostId: null };
       this.chatMessages = [];
 
       this._intentionallyStopped = false;
       this._pingTimer = null;
       this._stateTimer = null;
+      this._aiHeartbeatTimer = null;
       this._reconnectDelay = 1000;
+
+      // AI host state
+      this.isAiHost = false;
+      this.activeMode = 'idle';
+      this.firstSyncReceived = false;
 
       // Callbacks for player.js integration
       this.onStatusChange = null;
       this.onTurnStart = null;
       this.onTurnEnd = null;
       this.onChatUpdate = null;
+      this.onAiGranted = null;
+      this.onAiRevoked = null;
+      this.onFirstSync = null;
 
       // Auto-connect so spectators get live status/chat without joining
       this._connect();
@@ -122,11 +131,34 @@
       }
     }
 
+    /** Stop and clean up AI heartbeat */
+    _stopAiHeartbeat() {
+      if (this._aiHeartbeatTimer) {
+        clearInterval(this._aiHeartbeatTimer);
+        this._aiHeartbeatTimer = null;
+      }
+    }
+
+    /** Start AI heartbeat to keep server TTL alive */
+    _startAiHeartbeat() {
+      this._stopAiHeartbeat();
+      var self = this;
+      this._aiHeartbeatTimer = setInterval(function () {
+        if (self.isAiHost) self._send("ai_input", {});
+      }, 3000);
+    }
+
+    /** Send an AI heartbeat — called externally by autoplay engine */
+    recordAiInput() {
+      if (this.isAiHost) this._send("ai_input", {});
+    }
+
     /** Leave queue but stay connected as spectator */
     async stop() {
       this.turn.joined = false;
       this.turn.isMyTurn = false;
       this._stopStatePush();
+      this._stopAiHeartbeat();
       clearInterval(this._pingTimer);
       this._pingTimer = null;
       if (this.ws) {
@@ -161,6 +193,8 @@
         playerId: this.me.id,
         turnTTL: this.status.turnTTL,
         messages: this.chatMessages,
+        activeMode: this.activeMode,
+        isAiHost: this.isAiHost,
       };
     }
 
@@ -206,8 +240,27 @@
             queueLen: msg.queueLen,
             viewers: msg.viewers,
             turnTTL: msg.turnTTL,
+            activeMode: msg.activeMode || 'idle',
+            aiHostId: msg.aiHostId || null,
           };
+          this.activeMode = msg.activeMode || 'idle';
           if (this.onStatusChange) this.onStatusChange(this.getStatus());
+          break;
+
+        case "ai_granted":
+          this.isAiHost = true;
+          this.activeMode = 'ai';
+          this._startAiHeartbeat();
+          this._startStatePush();
+          if (this.onAiGranted) this.onAiGranted();
+          break;
+
+        case "ai_revoked":
+          this.isAiHost = false;
+          if (this.activeMode === 'ai') this.activeMode = 'idle';
+          this._stopAiHeartbeat();
+          this._stopStatePush();
+          if (this.onAiRevoked) this.onAiRevoked();
           break;
 
         case "turn_granted": {
@@ -252,8 +305,12 @@
           break;
 
         case "game_state":
-          if (!this.turn.isMyTurn && this.emulator && msg.state) {
+          if (!this.turn.isMyTurn && !this.isAiHost && this.emulator && msg.state) {
             try { this.emulator.loadState(b64ToBuf(msg.state)); } catch (_) {}
+          }
+          if (!this.firstSyncReceived) {
+            this.firstSyncReceived = true;
+            if (this.onFirstSync) this.onFirstSync();
           }
           break;
 

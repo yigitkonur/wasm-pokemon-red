@@ -68,6 +68,8 @@ const elements = {
   mpJoinBtn: document.getElementById("mp-join-btn"),
   mpNickname: document.getElementById("mp-nickname"),
   mpJoinSection: document.getElementById("mp-join-section"),
+  soundToggle: document.getElementById("sound-toggle"),
+  cabinetState: document.getElementById("cabinet-state"),
 };
 
 const app = {
@@ -167,6 +169,16 @@ function bindUi() {
       elements.screenFrame.focus({ preventScroll: true });
     });
   });
+
+  // Sound toggle
+  if (elements.soundToggle) {
+    elements.soundToggle.addEventListener('click', () => {
+      if (app.emulator) {
+        app.emulator.audio.toggleMute();
+      }
+      elements.screenFrame.focus({ preventScroll: true });
+    });
+  }
 }
 
 async function handleAction(action) {
@@ -486,6 +498,39 @@ function initMultiplayer() {
   mp.onChatUpdate = function (messages) {
     renderChatMessages(messages);
   };
+
+  // Syncing overlay: hold "Syncing..." status until first game_state arrives
+  setStatus("Syncing with live game\u2026");
+  var syncFallback = setTimeout(function () { setStatus("Running"); }, 3000);
+  mp.onFirstSync = function () {
+    clearTimeout(syncFallback);
+    setStatus("Running");
+  };
+
+  // AI callbacks: start/stop autoplay when server grants/revokes AI control
+  mp.onAiGranted = function () {
+    if (!window.Autoplay) return;
+    if (!app.autoplay) {
+      app.autoplay = new window.Autoplay(app.module, app.emulator.e);
+    }
+    app.autoplay.setMultiplayerAllowed(true);
+    app.autoplay.start();
+    syncAutoplayUi();
+    if (elements.autoplayPanel) elements.autoplayPanel.hidden = false;
+    if (!app.autoplayUiTimerId) {
+      app.autoplayUiTimerId = setInterval(updateAutoplayPanel, 250);
+    }
+  };
+
+  mp.onAiRevoked = function () {
+    if (app.autoplay) {
+      app.autoplay.setMultiplayerAllowed(false);
+      app.autoplay.stop();
+    }
+    clearInterval(app.autoplayUiTimerId);
+    app.autoplayUiTimerId = 0;
+    syncAutoplayUi();
+  };
 }
 
 function updateMultiplayerUI(s) {
@@ -501,16 +546,16 @@ function updateMultiplayerUI(s) {
   // Active label
   var label = elements.mpActiveLabel;
   if (label) {
-    if (s.activeName) {
-      if (s.isMyTurn) {
-        label.innerHTML = "<strong>Your turn!</strong> Play now";
-      } else {
-        label.innerHTML = "<strong>" + escapeHtml(s.activeName) + "</strong> is playing";
-      }
+    if (s.isMyTurn) {
+      label.innerHTML = "<strong>Your turn!</strong> Play now";
+    } else if (s.activeName) {
+      label.innerHTML = "<strong>" + escapeHtml(s.activeName) + "</strong> is playing";
+    } else if (s.activeMode === 'ai') {
+      label.textContent = "🤖 AI is playing";
     } else if (s.joined) {
-      label.textContent = "Waiting for players...";
+      label.textContent = "Waiting for players\u2026";
     } else {
-      label.textContent = "Watching live — click Join to play";
+      label.textContent = "Watching live \u2014 click Join to play";
     }
   }
 

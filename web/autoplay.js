@@ -607,6 +607,9 @@ class Autoplay {
     // Speed hint
     this._speedHintCallback = null;
 
+    // Multiplayer gate: null = no gate (solo/local), true/false = mp-controlled
+    this.multiplayerAllowed = null;
+
     // Encounter species tracking
     this.speciesEncountered = {};
     this.recentSpecies = []; // last 10 species for grinding fatigue
@@ -664,6 +667,16 @@ class Autoplay {
   toggle() {
     this.active ? this.stop() : this.start();
     return this.active;
+  }
+
+  /**
+   * Set the multiplayer gate.
+   * null  = solo mode, no gate
+   * true  = multiplayer, AI granted — inputs allowed
+   * false = multiplayer, AI revoked — suppress all inputs
+   */
+  setMultiplayerAllowed(allowed) {
+    this.multiplayerAllowed = allowed;
   }
 
   getStatus() {
@@ -946,6 +959,9 @@ class Autoplay {
 
     // Process held button releases
     this._processHeldButtons();
+
+    // Multiplayer gate: if mp-controlled and not granted, suppress all inputs
+    if (this.multiplayerAllowed === false) return;
 
     // Battle end cooldown
     if (this.battleEndCooldown > 0) {

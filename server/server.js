@@ -43,6 +43,14 @@ let idleTimer = null;
 let turnStartedAt = null;
 let lastInputAt = null;
 
+// AI host state
+let activeMode = 'idle'; // 'idle' | 'human' | 'ai'
+let aiHostId = null;
+let aiHostWs = null;
+let aiIdleTimer = null;
+const AI_IDLE_MS = 8000; // revoke AI if no heartbeat within this window
+const AI_ELECT_DELAY_MS = 1000; // ms after turn ends before electing AI host
+
 // ── Broadcast helpers ───────────────────────────────────────────────────────
 function send(ws, type, payload) {
   if (ws.readyState === ws.OPEN) {
@@ -71,7 +79,60 @@ function broadcastStatus() {
     queueLen: queue.length,
     viewers: clients.size,
     turnTTL: ttlSec,
+    activeMode,
+    aiHostId,
   });
+}
+
+// ── AI Host management ──────────────────────────────────────────────────────
+function clearAiIdleTimer() {
+  if (aiIdleTimer) { clearTimeout(aiIdleTimer); aiIdleTimer = null; }
+}
+
+function scheduleAiTimeout() {
+  clearAiIdleTimer();
+  aiIdleTimer = setTimeout(() => {
+    if (aiHostId) {
+      console.log(`[ai] idle timeout for ${aiHostId}`);
+      revokeAiHost('timeout');
+      setTimeout(electAiHost, AI_ELECT_DELAY_MS);
+    }
+  }, AI_IDLE_MS);
+}
+
+/** Revoke AI host control and notify them. */
+function revokeAiHost(reason) {
+  clearAiIdleTimer();
+  if (!aiHostId) return;
+  const prevWs = aiHostWs;
+  const prevId = aiHostId;
+  aiHostId = null;
+  aiHostWs = null;
+  if (activeMode === 'ai') activeMode = 'idle';
+  if (prevWs && prevWs.readyState === prevWs.OPEN) {
+    send(prevWs, 'ai_revoked', { reason });
+  }
+  console.log(`[ai] revoked from ${prevId} (${reason})`);
+}
+
+/**
+ * Elect a spectator (connected, not in queue) as AI host.
+ * No-op if a human player is active or an AI host is already set.
+ */
+function electAiHost() {
+  if (activePlayerId || aiHostId) return;
+  for (const [ws, info] of clients) {
+    if (!info.joined && ws.readyState === ws.OPEN) {
+      aiHostId = info.id;
+      aiHostWs = ws;
+      activeMode = 'ai';
+      scheduleAiTimeout();
+      send(ws, 'ai_granted', { reason: 'no_human' });
+      broadcastStatus();
+      console.log(`[ai] granted to spectator ${info.id}`);
+      return;
+    }
+  }
 }
 
 // ── Turn management ─────────────────────────────────────────────────────────
@@ -90,6 +151,9 @@ function scheduleTurnTimeout() {
 }
 
 async function grantTurn(player) {
+  // Revoke AI control before granting to human
+  revokeAiHost('human_turn');
+  activeMode = 'human';
   activePlayerId = player.id;
   turnStartedAt = Date.now();
   lastInputAt = Date.now();
@@ -137,7 +201,10 @@ async function revokeAndAdvance(reason) {
   if (queue.length > 0) {
     await grantTurn(queue[0]);
   } else {
+    activeMode = 'idle';
     broadcastStatus();
+    // No humans remain — elect an AI host after a short delay
+    setTimeout(electAiHost, AI_ELECT_DELAY_MS);
   }
 
   // Clear Redis turn lock
@@ -149,6 +216,11 @@ async function revokeAndAdvance(reason) {
 async function handleJoin(ws, { id, nickname }) {
   const info = clients.get(ws);
   if (!info || info.joined) return;
+
+  // If this spectator was the AI host, revoke before they join as human
+  if (info.id === aiHostId) {
+    revokeAiHost('self_joined');
+  }
 
   // Clean nickname
   nickname = (nickname || 'Trainer').trim().substring(0, 16) || 'Trainer';
@@ -218,7 +290,9 @@ async function handleChat(ws, { text }) {
 
 async function handleStatePush(ws, { state, sram }) {
   const info = clients.get(ws);
-  if (!info || info.id !== activePlayerId) return;
+  if (!info) return;
+  // Accept state from active human player OR current AI host
+  if (info.id !== activePlayerId && info.id !== aiHostId) return;
   if (!state) return;
 
   // Relay to all connected clients (including spectators)
@@ -265,7 +339,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, clients: clients.size, queue: queue.length, active: activePlayerId });
+  res.json({ ok: true, clients: clients.size, queue: queue.length, active: activePlayerId, mode: activeMode, aiHost: aiHostId });
 });
 
 const server = http.createServer(app);
@@ -282,6 +356,9 @@ wss.on('connection', (ws, req) => {
   sendInitialState(ws);
   // Send current status
   broadcastStatus();
+
+  // Elect AI host if nobody is controlling the cabinet
+  setTimeout(electAiHost, AI_ELECT_DELAY_MS);
 
   ws.on('message', async (data) => {
     let msg;
@@ -307,6 +384,12 @@ wss.on('connection', (ws, req) => {
         case 'state_push':
           await handleStatePush(ws, msg);
           break;
+        case 'ai_input': {
+          // Heartbeat from AI host to keep control alive
+          const ainfo = clients.get(ws);
+          if (ainfo && ainfo.id === aiHostId) scheduleAiTimeout();
+          break;
+        }
         case 'ping':
           send(ws, 'pong', {});
           break;
@@ -317,10 +400,20 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', async () => {
-    console.log(`[ws] disconnect: ${clients.get(ws)?.id}`);
+    const info = clients.get(ws);
+    console.log(`[ws] disconnect: ${info?.id}`);
+
+    // If AI host disconnects, revoke and try to re-elect
+    if (info && info.id === aiHostId) {
+      revokeAiHost('disconnect');
+    }
+
     await handleLeave(ws);
     clients.delete(ws);
     broadcastStatus();
+
+    // Re-elect AI host if needed after any disconnect
+    setTimeout(electAiHost, AI_ELECT_DELAY_MS);
   });
 
   ws.on('error', (err) => {
