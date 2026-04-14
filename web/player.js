@@ -68,7 +68,8 @@ const elements = {
   mpJoinBtn: document.getElementById("mp-join-btn"),
   mpNickname: document.getElementById("mp-nickname"),
   mpJoinSection: document.getElementById("mp-join-section"),
-  soundToggle: document.getElementById("sound-toggle"),
+  soundToggle: document.getElementById("sound-toggle-btn"),
+  soundToggleLabel: document.getElementById("sound-toggle-label"),
   cabinetState: document.getElementById("cabinet-state"),
 };
 
@@ -86,6 +87,7 @@ const app = {
   storageKey: null,
   version: null,
   wasRunningBeforeHide: false,
+  hasMultiplayerStatus: false,
 };
 
 async function bootstrap() {
@@ -170,15 +172,6 @@ function bindUi() {
     });
   });
 
-  // Sound toggle
-  if (elements.soundToggle) {
-    elements.soundToggle.addEventListener('click', () => {
-      if (app.emulator) {
-        app.emulator.audio.toggleMute();
-      }
-      elements.screenFrame.focus({ preventScroll: true });
-    });
-  }
 }
 
 async function handleAction(action) {
@@ -203,6 +196,10 @@ async function handleAction(action) {
     case "autoplay":
       ensureRuntime();
       toggleAutoplay();
+      break;
+    case "sound-toggle":
+      ensureRuntime();
+      await app.emulator.audio.toggleMuted();
       break;
     case "save-state":
       ensureRuntime();
@@ -500,6 +497,8 @@ function initMultiplayer() {
   };
 
   // Syncing overlay: hold "Syncing..." status until first game_state arrives
+  app.hasMultiplayerStatus = false;
+  applyCabinetState({key: "syncing", label: "Syncing live cabinet"});
   setStatus("Syncing with live game\u2026");
   var syncFallback = setTimeout(function () { setStatus("Running"); }, 3000);
   mp.onFirstSync = function () {
@@ -533,27 +532,60 @@ function initMultiplayer() {
   };
 }
 
+function deriveCabinetState(status) {
+  if (status && status.activeMode === "ai") {
+    return {key: "ai", label: "AI is playing"};
+  }
+  if (status && status.isMyTurn) {
+    return {key: "playable", label: "Playable now"};
+  }
+  if (status && status.joined) {
+    return {key: "queued", label: "Queued"};
+  }
+  if (!app.hasMultiplayerStatus) {
+    return {key: "syncing", label: "Syncing live cabinet"};
+  }
+  return {key: "spectating", label: "Spectating"};
+}
+
+function applyCabinetState(state) {
+  var stateEl = elements.cabinetState;
+  if (!stateEl || !state) {
+    return;
+  }
+  stateEl.className = "pill cabinet-state";
+  stateEl.textContent = state.label;
+  stateEl.classList.add("state-" + state.key);
+}
+
 function updateMultiplayerUI(s) {
+  app.hasMultiplayerStatus = true;
+  var cabinetState = deriveCabinetState(s);
+
   // Status dot
   var dot = elements.mpDot;
   if (dot) {
     dot.className = "mp-dot";
-    if (s.isMyTurn) dot.classList.add("playing");
-    else if (s.joined) dot.classList.add("watching");
-    else dot.classList.add("watching"); // spectator: connected but not in queue
+    if (cabinetState.key === "playable") dot.classList.add("playing");
+    else if (cabinetState.key === "queued") dot.classList.add("waiting");
+    else if (cabinetState.key === "ai") dot.classList.add("ai");
+    else if (cabinetState.key === "syncing") dot.classList.add("syncing");
+    else dot.classList.add("watching");
   }
 
   // Active label
   var label = elements.mpActiveLabel;
   if (label) {
-    if (s.isMyTurn) {
+    if (cabinetState.key === "playable") {
       label.innerHTML = "<strong>Your turn!</strong> Play now";
+    } else if (cabinetState.key === "ai") {
+      label.textContent = "AI is driving the cabinet";
     } else if (s.activeName) {
       label.innerHTML = "<strong>" + escapeHtml(s.activeName) + "</strong> is playing";
-    } else if (s.activeMode === 'ai') {
-      label.textContent = "🤖 AI is playing";
-    } else if (s.joined) {
-      label.textContent = "Waiting for players\u2026";
+    } else if (cabinetState.key === "queued") {
+      label.textContent = "You're in line for the next turn";
+    } else if (cabinetState.key === "syncing") {
+      label.textContent = "Syncing cabinet state\u2026";
     } else {
       label.textContent = "Watching live \u2014 click Join to play";
     }
@@ -567,6 +599,8 @@ function updateMultiplayerUI(s) {
   if (elements.mpTimer) {
     elements.mpTimer.textContent = s.turnTTL > 0 ? s.turnTTL + "s" : "";
   }
+
+  applyCabinetState(cabinetState);
 }
 
 function renderChatMessages(messages) {
@@ -599,6 +633,19 @@ function renderChatMessages(messages) {
   if (elements.chatCount) elements.chatCount.textContent = messages.length;
 }
 
+function updateSoundToggleUI() {
+  var button = elements.soundToggle;
+  if (!button) {
+    return;
+  }
+  var muted = app.emulator ? app.emulator.audio.muted : true;
+  button.setAttribute("aria-pressed", muted ? "false" : "true");
+  button.setAttribute("aria-label", muted ? "Turn sound on" : "Turn sound off");
+  if (elements.soundToggleLabel) {
+    elements.soundToggleLabel.textContent = muted ? "Sound Off" : "Sound On";
+  }
+}
+
 function escapeHtml(str) {
   var div = document.createElement("div");
   div.textContent = str;
@@ -621,6 +668,7 @@ function startRuntime(initialSram) {
   });
 
   syncPauseButton();
+  updateSoundToggleUI();
   refreshButtonState();
   setStatus("Running");
   initMultiplayer();
@@ -1085,23 +1133,37 @@ class AudioManager {
         this.module._get_audio_buffer_capacity(emulatorHandle));
     this.onUnlocked = onUnlocked;
     this.started = !this.available || AudioManager.unlocked;
+    this.muted = true;
     this.startSec = 0;
 
-    if (this.available) {
-      if (this.started) {
-        elements.overlayMessage.hidden = true;
-      } else {
-        this.boundStartPlayback = () => this.startPlayback();
-        window.addEventListener("keydown", this.boundStartPlayback, true);
-        window.addEventListener("click", this.boundStartPlayback, true);
-        window.addEventListener("touchend", this.boundStartPlayback, true);
-      }
-    } else {
+    if (this.available && !this.started) {
+      this.boundStartPlayback = () => this.startPlayback();
+      window.addEventListener("keydown", this.boundStartPlayback, true);
+      window.addEventListener("click", this.boundStartPlayback, true);
+      window.addEventListener("touchend", this.boundStartPlayback, true);
+    } else if (!this.available && elements.overlayMessage) {
       elements.overlayMessage.hidden = true;
     }
   }
 
-  startPlayback() {
+  async toggleMuted() {
+    this.muted = !this.muted;
+    if (this.muted) {
+      if (this.available && this.started && this.context.state !== "suspended") {
+        await this.context.suspend();
+      }
+    } else if (this.available) {
+      if (!this.started) {
+        await this.startPlayback();
+      } else if (this.context.state === "suspended") {
+        await this.context.resume();
+      }
+    }
+    updateSoundToggleUI();
+    return this.muted;
+  }
+
+  async startPlayback() {
     if (!this.available) {
       return;
     }
@@ -1112,14 +1174,14 @@ class AudioManager {
     }
     AudioManager.unlocked = true;
     this.started = true;
-    this.context.resume();
+    await this.context.resume();
     if (this.onUnlocked) {
       this.onUnlocked();
     }
   }
 
   pushBuffer() {
-    if (!this.available || !this.started) {
+    if (!this.available || !this.started || this.muted) {
       return;
     }
 
@@ -1154,7 +1216,7 @@ class AudioManager {
   }
 
   resume() {
-    if (this.available && this.started) {
+    if (this.available && this.started && !this.muted) {
       this.context.resume();
     }
   }

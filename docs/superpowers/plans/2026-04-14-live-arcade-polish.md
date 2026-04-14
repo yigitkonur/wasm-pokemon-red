@@ -59,7 +59,19 @@
     </section>
 
     <section class="player-bar-section">
-      <div class="player-bar">...</div>
+      <div class="player-bar">
+        <div class="player-bar__left">
+          <button type="button" id="pause-button" class="bar-btn" aria-label="Pause"></button>
+          <button type="button" data-action="reset" class="bar-btn" aria-label="Reset"></button>
+        </div>
+        <div class="player-bar__center">
+          <div class="speed-control" role="group" aria-label="Emulation speed"></div>
+        </div>
+        <div class="player-bar__right">
+          <button type="button" id="autoplay-button" class="bar-btn autoplay-toggle" aria-label="AutoPlay"></button>
+          <button type="button" data-action="fullscreen" class="bar-btn" aria-label="Fullscreen"></button>
+        </div>
+      </div>
     </section>
 
     <section id="autoplay-panel" class="autoplay-panel" hidden>
@@ -72,7 +84,15 @@
 
   <aside class="live-cabinet__chat">
     <section class="chat-panel" id="chat-panel">
-      ...
+      <div class="chat-header">
+        <p class="caps-label">Live Chat</p>
+        <span class="mp-badge" id="chat-count">0</span>
+      </div>
+      <div class="chat-messages" id="chat-messages" role="log" aria-live="polite"></div>
+      <form class="chat-input-row" id="chat-form" autocomplete="off">
+        <input type="text" id="chat-input" class="chat-input" maxlength="280">
+        <button type="submit" class="chat-send-btn" aria-label="Send"></button>
+      </form>
     </section>
   </aside>
 </section>
