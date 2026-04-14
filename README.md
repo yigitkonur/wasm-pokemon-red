@@ -1,12 +1,16 @@
 # wasm-pokemon-red
 
-> How I got Pokémon Red running in a browser using WebAssembly — from Game Boy assembly to a static site.
+> Pokémon Red compiled from Game Boy assembly, running in your browser as WebAssembly — with a shared live arcade so your visitors can take turns playing together.
 
-## The idea
+**[▶ Play the live arcade now →](https://yigitkonur.github.io/wasm-pokemon-red/)**
 
-What if you could play Pokémon Red in a browser tab? No downloads, no extensions, no emulator apps — just open a URL and you're in Pallet Town. That's what this project does. It takes the actual disassembled Game Boy source code, compiles the ROM from scratch, wraps a C emulator in WebAssembly, and serves the whole thing as a static site on GitHub Pages. No backend. No cloud. Just HTML, JS, WASM, and a `.gbc` file.
+This project does two things:
 
-Here's how I got there, step by step.
+1. **WASM player** — takes the actual disassembled Game Boy source code, compiles the ROM from scratch, wraps a C emulator in WebAssembly, and serves the whole thing as a static site on GitHub Pages. No downloads, no extensions, no server needed to play.
+
+2. **Shared live arcade** — adds a WebSocket relay server and Redis-backed state sync so every visitor to your site is watching (or playing) the same game, Twitch-style. Turn-based control passes between players. An AI bot fills in whenever nobody is actively playing.
+
+Read on for the full technical walkthrough, the architecture diagram, and a self-hosting guide.
 
 ---
 
@@ -152,23 +156,309 @@ The HTML shell uses only relative URLs, so it works both at the repository root 
 
 ---
 
+## Architecture
+
+The full system has two layers. The browser layer works standalone. The arcade layer adds shared state and turn arbitration.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  BUILD PIPELINE (GitHub Actions, runs once per push)             │
+│                                                                  │
+│  pokemon-red .asm files                                          │
+│       │  rgbasm + rgblink + rgbfix                               │
+│       ▼                                                          │
+│  pokered.gbc  ──► copied to dist/web/assets/                     │
+│                                                                  │
+│  third_party/binjgb (C emulator, git submodule)                  │
+│       │  stage to web/.build/binjgb                              │
+│       │  overlay: web/binjgb/exported.json + wrapper.c           │
+│       │  emcc (Emscripten)                                        │
+│       ▼                                                          │
+│  binjgb.js + binjgb.wasm  ──► copied to dist/web/assets/        │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│  BROWSER LAYER (static, zero backend required)                   │
+│                                                                  │
+│  player.html  ──loads──►  player.js  ──loads──►  binjgb.wasm    │
+│                              │                                   │
+│                    ┌─────────┴─────────────────┐                 │
+│                    │         │                 │                 │
+│              <canvas>   IndexedDB         AudioContext           │
+│              (WebGL)    SRAM + save-state  (unlocks on click)    │
+│                    │                                             │
+│              autoplay.js   ── AI bot (overworld + battles)       │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│  ARCADE LAYER (optional, adds shared play)                       │
+│                                                                  │
+│  Browser A                  Railway WebSocket server             │
+│  (human player)             server/server.js                     │
+│       │  WebSocket (wss://) │                                    │
+│       ◄────────────────────►│◄────► Upstash Redis (REST)        │
+│                             │       game_state snapshot          │
+│  Browser B                  │       chat history                 │
+│  (spectator / queue)        │                                    │
+│       │  WebSocket (wss://) │                                    │
+│       ◄────────────────────►│                                    │
+│                             │                                    │
+│  Browser C                  │                                    │
+│  (AI host — client-side)    │  server elects AI host when        │
+│  autoplay.js runs when      │  no human owns the cabinet         │
+│  server grants ai_granted   │                                    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Key repos and tools referenced
+
+| Dependency | What it does | Where |
+|---|---|---|
+| [pret/pokered](https://github.com/pret/pokered) | Disassembled Pokémon Red/Blue source | `./` (this repo forks it) |
+| [gbdev/rgbds](https://github.com/gbdev/rgbds) | Game Boy assembler — `rgbasm`, `rgblink`, `rgbfix` | installed in CI |
+| [nicknassar/binjgb](https://github.com/nicknassar/binjgb) | Minimal C Game Boy emulator, Emscripten-friendly | `third_party/binjgb` |
+| [emscripten-core/emsdk](https://github.com/emscripten-core/emsdk) | C→WebAssembly compiler toolchain | installed in CI |
+| [bouletmarc/PokeBot](https://github.com/bouletmarc/PokeBot) | AI strategy reference for overworld + battle automation | inspiration for `web/autoplay.js` |
+| [websockets/ws](https://github.com/websockets/ws) | Node.js WebSocket server library | `server/package.json` |
+| [Upstash Redis](https://upstash.io/) | Serverless Redis (REST API) for game-state persistence | cloud dependency |
+| [Railway](https://railway.app/) | Node.js WebSocket server hosting | cloud dependency |
+
+---
+
+## File map
+
+Where everything lives and what to read first.
+
+```
+wasm-pokemon-red/
+│
+│  ── ROM build ────────────────────────────────────────────────
+├── main.asm / audio.asm / home.asm / maps.asm / text.asm / ram.asm
+│     Game Boy assembly source. Entry point is main.asm.
+├── Makefile              ROM + web bundle build rules. Start here.
+├── layout.link           RGBLINK script — how ROM sections are laid out.
+├── roms.sha1             Expected SHA-1 hashes for deterministic builds.
+│
+│  ── Emscripten overlay ───────────────────────────────────────
+├── third_party/binjgb/   Pinned submodule. Do not edit directly.
+├── web/binjgb/
+│   ├── exported.json     List of C functions Emscripten must expose to JS.
+│   └── wrapper.c         C glue: save-state hooks injected into binjgb.
+│
+│  ── Browser shell ────────────────────────────────────────────
+├── web/
+│   ├── player.html       Static HTML shell. Start reading here for the UI.
+│   ├── player.css        All styling: layout, canvas frame, touch controls.
+│   ├── player.js         ~1400 lines. Emulator lifecycle, input, audio,
+│   │                     IndexedDB persistence, speed control, state UI.
+│   ├── multiplayer.js    WebSocket client. Handles join, turn, chat,
+│   │                     game-state sync, AI protocol messages.
+│   └── autoplay.js       AI bot. Reads RAM directly; navigates overworld,
+│                         manages battles, recovers from stuck states.
+│
+│  ── Arcade server ────────────────────────────────────────────
+├── server/
+│   ├── server.js         Node.js WebSocket + Express server.
+│   │                     Turn queue, AI election, Redis sync, chat relay.
+│   └── package.json      Dependencies: ws, express, cors.
+│
+│  ── CI + deploy ──────────────────────────────────────────────
+├── .github/workflows/main.yml
+│                         Two jobs: `build` (ROM) and `web` (WASM bundle +
+│                         GitHub Pages deploy). Read this to understand CI.
+│
+│  ── Dist (generated, do not edit) ────────────────────────────
+└── dist/web/             Output of `make web`. Deployed to GitHub Pages.
+    ├── index.html / player.html
+    ├── player.css / player.js / autoplay.js / multiplayer.js
+    └── assets/
+        ├── pokered.gbc   The compiled ROM.
+        ├── binjgb.js     Emscripten runtime glue.
+        ├── binjgb.wasm   Compiled emulator binary.
+        └── version.json  Build metadata (commit SHA, binjgb version).
+```
+
+### How to read `player.html`
+
+`player.html` is the document shell. The DOM structure is:
+
+```
+<body>
+  <header>                    ← site nav (links back to blog)
+  <main>
+    <section>                 ← page title + status pills
+    <section.live-topbar>     ← join controls, multiplayer status, sound toggle
+    <div.live-cabinet>        ← two-column desktop layout
+      <div.live-cabinet__game>
+        <section.player-section>   ← <canvas id="screen">
+        <section.player-bar-section>  ← toolbar: pause/reset, speed, AI, fullscreen
+        <details.secondary-controls>  ← save/load state, import/export save
+        <section.controls-section>    ← touch D-pad + A/B/Start/Select
+        <section#autoplay-panel>      ← AI bot status panel (hidden by default)
+      </div>
+      <aside.live-cabinet__chat>
+        <section.chat-panel>   ← live chat messages + input
+      </aside>
+    </div>
+    <section.keyboard-guide>  ← keyboard mapping reference
+  </main>
+  <footer>
+</body>
+```
+
+`player.js` queries elements by `id` or `data-action`. The `handleAction(action, value)` function is the central dispatcher — search for it first when tracing any button behaviour.
+
+---
+
 ## Playing it
 
-**[▶ Play it live](https://yigitkonur.github.io/wasm-pokemon-red/)**
+**[▶ Play the live arcade →](https://yigitkonur.github.io/wasm-pokemon-red/)**
 
-Once the page loads, you're in. Controls:
+One game, shared between all visitors. Join to take a turn; spectate while others play. An AI bot keeps the game moving when nobody is in the queue.
 
-| Action | Keyboard | Gamepad |
-|--------|----------|---------|
-| D-pad | Arrow keys | D-pad / Left stick |
-| A | Z | A button |
-| B | X | B button |
-| Start | Enter | Start |
-| Select | Backspace | Select |
+### Controls
 
-On mobile, use the on-screen touch controls.
+| Action | Keyboard | Touch | Gamepad |
+|--------|----------|-------|---------|
+| D-pad | Arrow keys | On-screen D-pad | D-pad / Left stick |
+| A | Space / Enter | A button | A button |
+| B | Shift / Z | B button | B button |
+| Start | Esc | Start | Start |
+| Select | Tab | Select | Select |
+| Speed 1×/2×/4×/⚡ | 1 / 2 / 3 / 4 | Speed buttons | — |
+
+Click the game screen to focus it. Clicking anywhere outside releases all held keys.
+
+Sound is **muted by default** — click **Sound On** in the top bar to unmute.
+
+### Multiplayer turn system
+
+1. Open the page. You start as a spectator. The game state syncs from Redis — you see exactly what everyone else sees.
+2. Enter a nickname and click **Join Game**. You enter the queue.
+3. When your turn starts, the cabinet becomes **Playable**. Use keyboard or touch controls.
+4. If you stop pressing keys for 5 seconds, your turn passes to the next person in the queue.
+5. When no humans are queued, an AI bot automatically takes control and keeps exploring.
+
+---
 
 Your game saves automatically to IndexedDB — close the tab, come back later, and your progress is still there. There's also a manual save-state slot you can use for quick saves. Save data is scoped to the specific ROM build, so different builds won't clobber each other's saves.
+
+---
+
+## Embed the player on your own site
+
+The player is fully standalone. You can drop a single self-contained `player.html` onto any static host — no build step required. All you need is the compiled `dist/web/` folder.
+
+### Option A — iframe embed (simplest)
+
+If you just want the game inside an existing page:
+
+```html
+<iframe
+  src="https://yigitkonur.github.io/wasm-pokemon-red/player.html"
+  width="560"
+  height="600"
+  allow="autoplay; gamepad"
+  style="border:none; display:block;"
+  title="Pokémon Red">
+</iframe>
+```
+
+Adjust width/height to taste. The player is responsive — it will scale the canvas to fit.
+
+### Option B — self-host the static files
+
+1. Download the latest `pokemon-rgb-web` artifact from [GitHub Actions](https://github.com/yigitkonur/wasm-pokemon-red/actions) (built on every push), or build it yourself with `make web`.
+2. Copy the contents of `dist/web/` to any static host (GitHub Pages, Netlify, Vercel, S3, nginx, or just `python3 -m http.server`).
+3. Open `index.html` (or `player.html`) in a browser.
+
+That's it — no Node.js, no database, no API keys needed for solo play.
+
+> **Note:** The shared arcade features (live turn queue, chat, AI bot, Redis state sync) require the WebSocket server described in the next section. Solo play works without it.
+
+### Option C — add the shared arcade to your own site
+
+See [Run your own shared arcade](#run-your-own-shared-arcade) below. After deploying the server, point `web/multiplayer.js` line 13 at your own WebSocket URL:
+
+```js
+const WS_URL = "wss://your-server.railway.app/ws";
+```
+
+Then rebuild (`make web`) and deploy the static files.
+
+---
+
+## Run your own shared arcade
+
+The shared arcade requires two hosted services:
+
+| Service | Purpose | Free tier |
+|---|---|---|
+| Railway (or any Node.js host) | WebSocket server — turn queue, AI arbitration, chat relay | ✅ Yes (Hobby plan) |
+| Upstash Redis | Serverless Redis — game-state snapshot persistence | ✅ Yes (10K commands/day) |
+
+### Step 1: Set up Upstash Redis
+
+1. Go to [upstash.com](https://upstash.com/) → Create a free database.
+2. From the database dashboard, copy:
+   - **REST URL** (looks like `https://YOUR-DB.upstash.io`)
+   - **REST Token**
+
+### Step 2: Deploy the WebSocket server on Railway
+
+1. Fork this repo.
+2. Go to [railway.app](https://railway.app/) → New Project → Deploy from GitHub repo.
+3. Select your fork. Railway will auto-detect the `server/` directory.
+4. Set these environment variables in the Railway dashboard:
+
+   ```
+   UPSTASH_REDIS_REST_URL=https://YOUR-DB.upstash.io
+   UPSTASH_REDIS_REST_TOKEN=your_token_here
+   PORT=3000
+   ```
+
+5. Railway assigns a public URL like `https://your-app.up.railway.app`.
+6. Verify the server is healthy:
+
+   ```bash
+   curl https://your-app.up.railway.app/health
+   # → {"ok":true,"clients":0,"queue":0,"active":null,"mode":"idle","aiHost":null}
+   ```
+
+### Step 3: Update the client WebSocket URL
+
+In `web/multiplayer.js`, line 13:
+
+```js
+const WS_URL = "wss://your-app.up.railway.app/ws";
+```
+
+Rebuild and deploy the static files (`make web`, then push to GitHub Pages or your static host).
+
+### Step 4: Configure GitHub Pages (if using GitHub)
+
+Settings → Pages → Source: **GitHub Actions**. The CI workflow handles the rest automatically.
+
+### Server protocol reference
+
+The WebSocket server speaks JSON. Key message types:
+
+| Message | Direction | Payload |
+|---|---|---|
+| `join` | client → server | `{ nickname }` |
+| `leave` | client → server | — |
+| `input` | client → server | `{ input, pressed }` |
+| `chat` | client → server | `{ text }` |
+| `push_state` | client → server | `{ state: <base64> }` |
+| `status` | server → client | `{ activeId, activeName, queueLen, viewers, turnTTL, activeMode }` |
+| `turn_start` | server → client | `{ playerId }` |
+| `turn_end` | server → client | `{ playerId }` |
+| `game_state` | server → client | `{ state: <base64> }` |
+| `chat_message` | server → client | `{ nickname, text, ts }` |
+| `ai_granted` | server → client | — |
+| `ai_revoked` | server → client | — |
+
+The `game_state` snapshot is the full emulator save-state serialized to base64 and stored in Redis under the key `pokemon:state`. Every client that joins receives this snapshot immediately so they are always watching the live cabinet, not a local cold boot.
 
 ---
 
@@ -210,14 +500,29 @@ Then open `http://127.0.0.1:8000/` and you should see the game boot.
 
 If you just want the ROM without the browser stuff, `make pokered.gbc` is all you need (just rgbds + make, no Emscripten required).
 
+### Run the arcade server locally
+
+```bash
+cd server
+npm install
+UPSTASH_REDIS_REST_URL=https://YOUR-DB.upstash.io \
+UPSTASH_REDIS_REST_TOKEN=your_token_here \
+node server.js
+```
+
+The server listens on `http://localhost:3000`. In `web/multiplayer.js` change `WS_URL` to `ws://localhost:3000/ws` for local development, then serve `dist/web/` in a separate terminal.
+
 ### Quick validation
 
 ```bash
-# Check the workflow YAML parses
-ruby -e "require 'yaml'; YAML.load_file('.github/workflows/main.yml')"
-
-# Check player.js for syntax errors
+# Check player.js and related files for syntax errors
 node --check web/player.js
+node --check web/multiplayer.js
+node --check web/autoplay.js
+node --check server/server.js
+
+# Check the arcade handoff surface (additive features smoke test)
+node scripts/verify-autoplay-handoff.js
 
 # Full web build
 make web binjgb_emscripten_cmake="$EMSCRIPTEN_CMAKE"
@@ -225,20 +530,22 @@ make web binjgb_emscripten_cmake="$EMSCRIPTEN_CMAKE"
 
 ---
 
-## Technical constraints
+## Technical notes
 
-A few things this project deliberately does **not** do:
+A few design decisions worth knowing:
 
-- **No multiplayer.** Link cable battles and trades require two Game Boy instances communicating over a serial protocol. We'd need a signaling server, WebRTC or WebSocket transport, and cycle-accurate synchronization. It's a genuinely hard problem and it's out of scope.
+- **No link-cable multiplayer.** Link cable battles and trades require two synchronized Game Boy instances over a serial protocol with cycle-accurate timing. The shared arcade is turn-based screen sharing, not a dual-instance cable simulation — a genuinely different (and much harder) problem.
 
-- **No cloud sync.** Save data lives in your browser's IndexedDB. Clear your browser data and it's gone. There's no account system, no backend, no sync service.
+- **No transpilation.** Game Boy assembly compiles into a `.gbc` ROM via rgbds. That ROM runs inside a wasm-compiled C emulator. The browser never recompiles gameplay logic — it only runs the emulator binary.
 
-- **No source-to-wasm compilation.** We're not transpiling Game Boy assembly into WebAssembly. The `.asm` files compile into a `.gbc` ROM through the normal rgbds toolchain, and that ROM runs inside a wasm-compiled emulator. The browser never sees or recompiles gameplay logic.
+- **Save compatibility is ROM-hash scoped.** SRAM and save-states are keyed to the SHA-1 of the compiled ROM. Rebuild from source, get a different hash, get a clean save namespace. This prevents silently loading a save into a binary-incompatible ROM — failures are loud rather than corrupting progress.
 
-- **Save compatibility is ROM-hash scoped.** If you change the source and rebuild, your old save data won't load automatically. This is a feature, not a bug — it prevents corrupted saves from binary-incompatible ROMs.
+- **The Emscripten overlay must stay in sync with `player.js`.** If `web/binjgb/exported.json` or `web/binjgb/wrapper.c` drift from what the JS host expects, the emulator fails at bootstrap with a clear missing-export error rather than silently misbehaving.
 
-- **The staged overlay must stay in sync with `player.js`.** If `exported.json` or `wrapper.c` drift from what the JavaScript host expects, things break. The emulator will fail at bootstrap with missing exports rather than silently misbehaving, so at least failures are loud.
+- **AI is client-hosted, not server-side.** The bot (`autoplay.js`) runs in whoever the server designates as the AI host's browser tab, not in a headless process on Railway. This keeps the server stateless and cheap. The server only does arbitration.
+
+- **Redis snapshot is eventually consistent.** The active player's browser pushes game state to Redis every ~10 seconds. A new visitor may be a few seconds behind the live cabinet, but this is invisible in practice.
 
 ---
 
-*Built with [rgbds](https://rgbds.gbdev.io/), [binjgb](https://github.com/nicknassar/binjgb), [Emscripten](https://emscripten.org/), and a mass of caffeine.*
+*Built with [rgbds](https://rgbds.gbdev.io/), [binjgb](https://github.com/nicknassar/binjgb), [Emscripten](https://emscripten.org/), and the [pret/pokered](https://github.com/pret/pokered) disassembly.*
